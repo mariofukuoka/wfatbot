@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Chart.js Scatter Plot Example</title>
+	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment@2.27.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@0.1.1"></script>
+
+</head>
+<body>
+	<div style="width: 80%;">
+		<canvas id="myChart"></canvas>
+	</div>
+
+	<script>
+		const data = {
+            datasets: [{
+                label: 'Scatter Dataset',
+                data: [
+                    { x: '2022-03-16 10:00:00', y: 'Category 1', desc: 'xD1' },
+                    { x: '2022-03-16 10:00:05', y: 'Category 2', desc: 'xD2' },
+                    { x: '2022-03-16 10:00:10', y: 'Category 3', desc: 'xD3' },
+                    { x: '2022-03-16 10:00:15', y: 'Category 2', desc: 'xD4' },
+                    { x: '2022-03-16 10:00:20', y: 'Category 1', desc: 'xD5' },
+                    { x: '2022-03-16 10:00:25', y: 'Category 3', desc: 'xD6' },
+                    { x: '2022-03-16 10:00:30', y: 'Category 2', desc: 'xD7' },
+                    { x: '2022-03-16 10:00:35', y: 'Category 1', desc: 'xD8' },
+                    { x: '2022-03-16 10:00:40', y: 'Category 3', desc: 'xD9' },
+                    { x: '2022-03-16 10:00:45', y: 'Category 2', desc: 'xD10' },
+                    { x: '2022-03-16 10:00:50', y: 'Category 1', desc: 'xD11' },
+                    { x: '2022-03-16 10:00:55', y: 'Category 3', desc: 'xD12' },
+                ],
+                backgroundColor: 'rgba(255, 99, 132, 0.5)'
+            }]
+        };
+
+        const config = {
+            type: 'scatter',
+            data: data,
+            options: {
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            parser: 'YYYY-MM-DD HH:mm:ss',
+                            tooltipFormat: 'll HH:mm:ss',
+                            unit: 'second',
+                            displayFormats: {
+                                second: 'HH:mm:ss'
+                            }
+                        }
+                    },
+                    y: {
+                        type: 'category',
+                        position: 'left',
+                        labels: ['Category 1', 'Category 2', 'Category 3']
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => {
+                                const point = context.raw;
+                                return `${point.desc}`;
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var myChart = new Chart(
+            document.getElementById('myChart'),
+            config
+        );
+	</script>
+</body>
+</html>
