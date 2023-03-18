@@ -3,6 +3,8 @@ const request = require('sync-request');
 const { Client, Events, GatewayIntentBits } = require('discord.js');
 const fs = require('fs');
 const axios = require('axios');
+const { JSDOM } = require('jsdom');
+
 
 // ============================== Config ===========================
 
@@ -18,6 +20,31 @@ const serviceId = config.sid;
 var trackedPlayers = ['kurohagane', 'lukas1233', 'yippys'];
 
 // ============================= Functions ==============================
+
+function createReport(eventHistory) {
+
+  fs.readFile('report_template.html', 'utf-8', (err, html) => {
+    if (err) throw err;
+
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
+
+    const element = document.querySelector('#script');
+    element.setAttribute('report-data', JSON.stringify(eventHistory));
+
+    presentUniquePlayers = Array.from(eventHistory.reduce((uniquePlayerSet, currEvent) => {
+      uniquePlayerSet.add(currEvent.y);
+      return uniquePlayerSet;
+    }, new Set()));
+    console.log(presentUniquePlayers);
+    element.setAttribute('y-labels', JSON.stringify(presentUniquePlayers));
+    fs.writeFile('output_report.html', dom.serialize(), (err) => {
+      if (err) throw err;
+      console.log('HTML saved to output.html');
+    });
+  });
+}
+
 
 async function getGainExperienceIdDescMap() {
   const url = 'https://census.daybreakgames.com/get/ps2/experience?c:limit=10000'
@@ -75,19 +102,19 @@ async function main() {
 
 
   //idNameMap = await getPlayerIdNameMap(trackedPlayers);
-  const idNameMap = await getPlayerIdNameMap(getMemberNames('vcbc'));
+  const idNameMap = await getPlayerIdNameMap(getMemberNames('bgla'));
 
   const trackedIds = Object.keys(idNameMap);
   console.log(idNameMap);
   //console.log(trackedIds);
 
+  var eventHistory = [];
+
   const gainXpIdDescMap = await getGainExperienceIdDescMap();
   //console.log(gainXpIdDescMap);
 
-  // Create a new WebSocket connection to the Daybreak API websocket endpoint
-  const ws = new WebSocket(`wss://push.planetside2.com/streaming?environment=ps2&service-id=s:${serviceId}`);
 
-
+  // ================================== DISCORD =====================================
   // Create a new client instance
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -103,12 +130,35 @@ async function main() {
   });
 
   client.on('message', msg => {
-    if (msg.content === '!ping') {
-      msg.reply('Pong!');
+    console.log(`message: ${msg.content}`)
+    if (msg.content === 'xd') {
+      msg.reply('xD');
     }
   });
 
+  client.on('interactionCreate', async interaction => {
+    if (!interaction.isCommand()) return;
+  
+    const { commandName } = interaction;
+  
+    if (commandName === 'ping') {
+      await interaction.reply('Pong!');
+    } else if (commandName === 'debug') {
+      const eventHistoryStr = JSON.stringify(eventHistory, null, '\t');
+      //console.log(eventHistoryStr)
+      
+      createReport(eventHistory);
+      await interaction.reply('```' + eventHistoryStr + '```');
+    }
+  });
+  
+
   client.login(config.token);
+
+  // =============================== PS2 STREAMING API ===================================
+
+  // Create a new WebSocket connection to the Daybreak API websocket endpoint
+  const ws = new WebSocket(`wss://push.planetside2.com/streaming?environment=ps2&service-id=s:${serviceId}`);
 
   // subscribe to outfit member events
   subJSON = {
@@ -116,7 +166,7 @@ async function main() {
     action: 'subscribe',
     characters: trackedIds,
     worlds: ['all'],
-    eventNames: ['GainExperience', 'Death', 'PlayerLogin', 'PlayerLogout'],
+    eventNames: ['GainExperience'], //'Death', 'PlayerLogin', 'PlayerLogout'],
     logicalAndCharactersWithWorlds:true
   }
 
@@ -143,7 +193,7 @@ async function main() {
       //console.log(memberIds.includes(characterId));
       const timestamp = data.payload.timestamp;
       const date = new Date(timestamp * 1000)
-      const formattedDate = date.toLocaleString('en-GB', { 
+      const formattedDate = date.toLocaleString('ja-JP', { 
         year: 'numeric', 
         month: '2-digit', 
         day: '2-digit', 
@@ -157,14 +207,18 @@ async function main() {
       if (eventName === 'GainExperience') {
         eventName = gainXpIdDescMap[data.payload.experience_id];
       }
-
-      msg = `${formattedDate}: ${eventName} event for ${idNameMap[characterId]}`
+      const characterName = idNameMap[characterId];
+      msg = `${formattedDate}: ${eventName} event for ${characterName}`
       console.log(msg);
+      //eventHistory.push({timestamp: date, player: characterName, event: eventName})
+      eventHistory.push({x: formattedDate, y: characterName, event: eventName})
       
+      /*
       // Send a message to a Discord channel
       const channelId = '695500966690029590';
       const channel = client.channels.cache.get(channelId); // Replace with your channel ID
       channel.send(msg);
+      */
     }
   });
 

@@ -12,11 +12,18 @@
 		<canvas id="myChart"></canvas>
 	</div>
 
-	<script>
+	<script id="script" y-labels="" report-data="">
+
+        const reportDataStr = document.currentScript.getAttribute('report-data');
+        const yLabelsStr = document.currentScript.getAttribute('y-labels');
+
+        const reportData = JSON.parse(reportDataStr);
+        const yLabels = JSON.parse(yLabelsStr);
+
 		const data = {
             datasets: [{
                 label: 'Scatter Dataset',
-                data: [
+                /*data: [
                     { x: '2022-03-16 10:00:00', y: 'Category 1', desc: 'xD1' },
                     { x: '2022-03-16 10:00:05', y: 'Category 2', desc: 'xD2' },
                     { x: '2022-03-16 10:00:10', y: 'Category 3', desc: 'xD3' },
@@ -29,7 +36,8 @@
                     { x: '2022-03-16 10:00:45', y: 'Category 2', desc: 'xD10' },
                     { x: '2022-03-16 10:00:50', y: 'Category 1', desc: 'xD11' },
                     { x: '2022-03-16 10:00:55', y: 'Category 3', desc: 'xD12' },
-                ],
+                ],*/
+                data: reportData,
                 backgroundColor: 'rgba(255, 99, 132, 0.5)'
             }]
         };
@@ -53,7 +61,8 @@
                     y: {
                         type: 'category',
                         position: 'left',
-                        labels: ['Category 1', 'Category 2', 'Category 3']
+                        //labels: ['Category 1', 'Category 2', 'Category 3']
+                        labels: yLabels
                     }
                 },
                 plugins: {
@@ -61,7 +70,7 @@
                         callbacks: {
                             label: (context) => {
                                 const point = context.raw;
-                                return `${point.desc}`;
+                                return `${point.event}`;
                             }
                         }
                     }
