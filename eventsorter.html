@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Kuro's GainExperience Sorter</title>
+</head>
+<body>
+	<h1>GainExperience Event Sorter</h1>
+	<p>Click the button corresponding to the category that the xp event belongs to:</p>
+    <div>
+		<button onclick="sortObject('General')">General</button>
+		<button onclick="sortObject('MAX')">Max</button>
+		<button onclick="sortObject('Infantry')">Infantry</button>
+		<button onclick="sortObject('Air')">Air</button>
+		<button onclick="sortObject('Ground')">Ground</button>
+		<button onclick="sortObject('Naval')">Naval</button>
+		<button onclick="sortObject('Unknown')">Skip</button>
+	</div>
+	<div id="objects">Loading, please wait...</div>
+	<div style="width: 100%; overflow: hidden;">
+		<div style="width: 800px; float: left;">
+			<h2>Sorted Events:</h2>
+			<button onclick="copyJSON('output')">Copy sorted to clipboard</button>
+			<br>
+			<code id="sorted" contenteditable="true" style="white-space: pre-wrap"></code>
+		</div>
+		<div style="margin-left: 620px;">
+			<h2>Unsorted Events:</h2>
+			<button onclick="copyJSON('unsorted')">Copy unsorted to clipboard</button>
+			<button onclick="parseJSON()">Parse JSON</button>
+			<br>
+			<code id="unsorted" contenteditable="true" style="white-space: pre-wrap"></code>
+		</div>
+	</div>
+	<script>
+		var sortedData = {};
+		var unsortedData = [];
+		
+
+		function parseJSON() {
+			try {
+				unsortedData = JSON.parse(document.getElementById('unsorted').innerText);
+				displayObject(unsortedData[0]);
+				alert("Pasted data parsed!");
+				console.log(unsortedData);
+			} catch {
+				alert("Parsing error, try again.")
+			}
+		}
+		
+		function toPrettyStr(obj) {
+			outputStr = '{\n';
+			for (const [key, value] of Object.entries(obj)) {
+				outputStr += `\t${JSON.stringify(key)}: ${JSON.stringify(value)},\n`;
+			}
+			outputStr += '}';
+			return outputStr;
+		}
+
+		function fetchObjectList() {
+			fetch("https://census.daybreakgames.com/get/ps2/experience?c:limit=3000")
+			.then(response => response.json())
+			.then(data => {
+                console.log(data.experience_list);
+				unsortedData = data.experience_list;
+				displayObject(unsortedData[0]);
+                console.log(unsortedData);
+				document.getElementById('unsorted').innerHTML = toPrettyStr2(unsortedData);
+			})
+			.catch(error => console.error(error));
+            
+		}
+
+
+		function toPrettyStr2(list) {
+			outputStr = '[\n';
+			for (const e of list) {
+				outputStr += `\t${JSON.stringify(e)},\n`;
+			}
+			outputStr += ']';
+			return outputStr;
+		}
+
+		
+
+		function sortObject(cat) {
+            var sorted = document.getElementById("sorted");
+			var unsorted = document.getElementById("unsorted");
+			console.log(unsortedData.length);
+			if (unsortedData.length > 0) {
+                obj = unsortedData.shift();
+                console.log(obj);
+
+				const entry = {desc: obj.description, xp: obj.xp, category: cat};
+				sortedData[obj.experience_id] = entry;	
+				sorted.innerHTML = toPrettyStr(sortedData);
+				unsorted.innerHTML = toPrettyStr2(unsortedData);
+				if(unsortedData.length > 0) {
+					displayObject(unsortedData[0]);
+				}
+				
+                
+			} else {
+				alert("All objects have been sorted.");
+			}
+		}
+		
+		function displayObject(obj) {
+			var objectsDiv = document.getElementById("objects");
+			objectsDiv.innerText = `ID: ${obj.experience_id}\nDescription: ${obj.description}\nXP: ${obj.xp}`;
+		}
+		
+        function copyJSON(id) {
+			var codeBlock = document.getElementById(id);
+			navigator.clipboard.writeText(codeBlock.innerText)
+				.then(() => {
+					console.log("Copied to clipboard!");
+				})
+				.catch(error => {
+					console.error("Failed to copy: ", error);
+				});
+		}
+
+		fetchObjectList();
+	</script>
+</body>
+</html>
+
+
