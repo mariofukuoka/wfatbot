@@ -9,6 +9,9 @@ const { JSDOM } = require('jsdom');
 // todo: use actual attribute names in the json here, then replace the 
 // key names with "x" and "y" used by chart.js when sending it over
 
+// different colors in legend for different kinds of events
+// deaths, infantry, air, ground vehicle, support?
+
 
 // ============================== Config ===========================
 
@@ -39,7 +42,7 @@ function createReport(eventHistory) {
     element.setAttribute('report-data', JSON.stringify(eventHistory));
 
     presentUniquePlayers = Array.from(eventHistory.reduce((uniquePlayerSet, currEvent) => {
-      uniquePlayerSet.add(currEvent.y);
+      uniquePlayerSet.add(currEvent.char);
       return uniquePlayerSet;
     }, new Set()));
     console.log(presentUniquePlayers);
@@ -108,7 +111,7 @@ async function main() {
 
 
   //idNameMap = await getPlayerIdNameMap(trackedPlayers);
-  const idNameMap = await getPlayerIdNameMap(getMemberNames('bgla'));
+  const idNameMap = await getPlayerIdNameMap(getMemberNames('48v1'));
 
   const trackedIds = Object.keys(idNameMap);
   console.log(idNameMap);
@@ -217,7 +220,7 @@ async function main() {
       msg = `${formattedDate}: ${eventName} event for ${characterName}`
       console.log(msg);
       //eventHistory.push({timestamp: date, player: characterName, event: eventName})
-      eventHistory.push({x: formattedDate, y: characterName, event: eventName})
+      eventHistory.push({t: formattedDate, char: characterName, event: eventName})
       
       /*
       // Send a message to a Discord channel
