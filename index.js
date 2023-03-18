@@ -6,6 +6,10 @@ const axios = require('axios');
 const { JSDOM } = require('jsdom');
 
 
+// todo: use actual attribute names in the json here, then replace the 
+// key names with "x" and "y" used by chart.js when sending it over
+
+
 // ============================== Config ===========================
 
 // Read the contents of the config file
@@ -18,6 +22,8 @@ const config = JSON.parse(rawConfig);
 const serviceId = config.sid;
 
 var trackedPlayers = ['kurohagane', 'lukas1233', 'yippys'];
+
+var output_filename = 'output_report.html'
 
 // ============================= Functions ==============================
 
@@ -38,7 +44,7 @@ function createReport(eventHistory) {
     }, new Set()));
     console.log(presentUniquePlayers);
     element.setAttribute('y-labels', JSON.stringify(presentUniquePlayers));
-    fs.writeFile('output_report.html', dom.serialize(), (err) => {
+    fs.writeFile(output_filename, dom.serialize(), (err) => {
       if (err) throw err;
       console.log('HTML saved to output.html');
     });
@@ -148,7 +154,7 @@ async function main() {
       //console.log(eventHistoryStr)
       
       createReport(eventHistory);
-      await interaction.reply('```' + eventHistoryStr + '```');
+      await interaction.reply({ files: [output_filename]})
     }
   });
   
