@@ -4,13 +4,15 @@ const { Client, Events, GatewayIntentBits } = require('discord.js');
 const fs = require('fs');
 const axios = require('axios');
 const { JSDOM } = require('jsdom');
-
+const xpMap = require('./xpmap.json')
 
 // todo: use actual attribute names in the json here, then replace the 
 // key names with "x" and "y" used by chart.js when sending it over
 
 // different colors in legend for different kinds of events
 // deaths, infantry, air, ground vehicle, support?
+
+// sometimes bot sends 0kb file, why?
 
 
 // ============================== Config ===========================
@@ -30,7 +32,7 @@ var output_filename = 'output_report.html'
 
 // ============================= Functions ==============================
 
-function createReport(eventHistory) {
+function createReport(eventHistory, uniquePlayers) {
 
   fs.readFile('report_template.html', 'utf-8', (err, html) => {
     if (err) throw err;
@@ -41,12 +43,17 @@ function createReport(eventHistory) {
     const element = document.querySelector('#script');
     element.setAttribute('report-data', JSON.stringify(eventHistory));
 
+
+
+    /*
     presentUniquePlayers = Array.from(eventHistory.reduce((uniquePlayerSet, currEvent) => {
       uniquePlayerSet.add(currEvent.char);
       return uniquePlayerSet;
     }, new Set()));
-    console.log(presentUniquePlayers);
-    element.setAttribute('y-labels', JSON.stringify(presentUniquePlayers));
+    */
+    
+    //console.log(presentUniquePlayers);
+    element.setAttribute('y-labels', JSON.stringify(Array.from(uniquePlayers)));
     fs.writeFile(output_filename, dom.serialize(), (err) => {
       if (err) throw err;
       console.log('HTML saved to output.html');
@@ -110,14 +117,17 @@ function mapTwoArrays(keys, values) {
 async function main() {
 
 
+
   //idNameMap = await getPlayerIdNameMap(trackedPlayers);
-  const idNameMap = await getPlayerIdNameMap(getMemberNames('48v1'));
+  const idNameMap = await getPlayerIdNameMap(getMemberNames('vstd'));
+  //const idNameMap = await getPlayerIdNameMap(['Yipsys', 'Selbstverwaltenderauserirdischer', 'BobsquddleHasComeToRecolonise', 'bananaMangoFestival2O23']);
 
   const trackedIds = Object.keys(idNameMap);
   console.log(idNameMap);
   //console.log(trackedIds);
 
-  var eventHistory = [];
+  var eventHistory = {'General':[], 'Infantry':[], 'MAX':[], 'Ground':[], 'Air':[]};
+  var uniquePlayers = new Set();
 
   const gainXpIdDescMap = await getGainExperienceIdDescMap();
   //console.log(gainXpIdDescMap);
@@ -156,7 +166,7 @@ async function main() {
       const eventHistoryStr = JSON.stringify(eventHistory, null, '\t');
       //console.log(eventHistoryStr)
       
-      createReport(eventHistory);
+      createReport(eventHistory, uniquePlayers);
       await interaction.reply({ files: [output_filename]})
     }
   });
@@ -196,7 +206,7 @@ async function main() {
     if (data.type === 'serviceMessage') { // && data.payload.event_name === 'PlayerLogin') {
       const characterId = data.payload.character_id;
       if( !(characterId in idNameMap) ) {
-        console.log(`unknown ID: ${characterId}`);
+        console.log(`unknown ID: ${characterId} for ${gainXpIdDescMap[data.payload.experience_id]} event`);
         return;
       }
       //console.log(memberIds.includes(characterId));
@@ -214,14 +224,28 @@ async function main() {
 
       let eventName = data.payload.event_name;
       if (eventName === 'GainExperience') {
+
         eventName = gainXpIdDescMap[data.payload.experience_id];
       }
       const characterName = idNameMap[characterId];
       msg = `${formattedDate}: ${eventName} event for ${characterName}`
       console.log(msg);
-      //eventHistory.push({timestamp: date, player: characterName, event: eventName})
-      eventHistory.push({t: formattedDate, char: characterName, event: eventName})
+
+      if(data.payload.experience_id in xpMap) {
+        
+        category = xpMap[data.payload.experience_id].category;
+        //eventHistory.push({timestamp: date, player: characterName, event: eventName})
+        //console.log(category);
+        eventHistory[category].push({t: formattedDate, char: characterName, event: eventName});
+        
+      } else {
+        eventHistory['General'].push({t: formattedDate, char: characterName, event: eventName});
+      }
+      uniquePlayers.add(characterName);
+
+
       
+
       /*
       // Send a message to a Discord channel
       const channelId = '695500966690029590';

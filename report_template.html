@@ -5,10 +5,9 @@
 	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/moment@2.27.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@0.1.1"></script>
-
 </head>
 <body>
-	<div style="width: 90%;">
+	<div style="width: 95%; height: 95%;">
 		<canvas id="myChart"></canvas>
 	</div>
 
@@ -21,11 +20,39 @@
         const yLabels = JSON.parse(yLabelsStr);
 
 		const data = {
-            datasets: [{
-                label: 'Scatter Dataset',
-                data: reportData,
-                backgroundColor: 'rgba(255, 99, 132, 0.5)'
-            }]
+            datasets: [
+                {
+                    label: 'General',
+                    data: reportData['General'],
+                    pointRadius: 7,
+                    backgroundColor: 'rgba(128, 128, 128, 0.5)'
+                },
+                {
+                    label: 'Infantry',
+                    data: reportData['Infantry'],
+                    pointRadius: 7,
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)'
+                },
+                {
+                    label: 'Ground',
+                    data: reportData['Ground'],
+                    pointRadius: 7,
+                    backgroundColor: 'rgba(75, 192, 192, 0.5)'
+                },
+                {
+                    label: 'Air',
+                    data: reportData['Air'],
+                    pointRadius: 7,
+                    backgroundColor: 'rgba(255, 99, 132, 0.5)'
+                },
+                {
+                    label: 'MAX',
+                    data: reportData['MAX'],
+                    pointRadius: 7,
+                    backgroundColor: 'rgba(255, 205, 86, 0.5)'
+                }
+
+            ]
         };
 
         const config = {
@@ -48,7 +75,14 @@
                         type: 'category',
                         position: 'left',
                         labels: yLabels
-                    }
+                    },
+                    yAxes: [
+                        {
+                            ticks: {
+                                padding: 50
+                            }
+                        }
+                    ]
                 },
                 plugins: {
                     tooltip: {
@@ -63,7 +97,9 @@
                 parsing: {
                     xAxisKey: 't',
                     yAxisKey: 'char'
-                }
+                },
+                responsive: true,
+                maintainAspectRatio: false  
             }
         };
 
@@ -72,5 +108,6 @@
             config
         );
 	</script>
+
 </body>
 </html>
