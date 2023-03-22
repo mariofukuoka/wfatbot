@@ -1,10 +1,11 @@
 const WebSocket = require('ws');
-const request = require('sync-request');
 const { Client, Events, GatewayIntentBits } = require('discord.js');
-const fs = require('fs');
 const axios = require('axios');
 const { JSDOM } = require('jsdom');
 const xpMap = require('./xpmap.json')
+const census = require('./census-funcs')
+const { token, serviceId } = require('./config.json');
+const fs = require('fs');
 
 // todo: use actual attribute names in the json here, then replace the 
 // key names with "x" and "y" used by chart.js when sending it over
@@ -17,22 +18,13 @@ const xpMap = require('./xpmap.json')
 
 // ============================== Config ===========================
 
-// Read the contents of the config file
-const rawConfig = fs.readFileSync('config.json');
-
-// Parse the config file as a JSON object
-const config = JSON.parse(rawConfig);
-
-// Replace with your own Daybreak API service ID
-const serviceId = config.sid;
-
 var trackedPlayers = ['kurohagane', 'lukas1233', 'yippys'];
 
-var output_filename = 'output_report.html'
+var outputFilename = 'output_report.html'
 
 // ============================= Functions ==============================
 
-function createReport(eventHistory, uniquePlayers) {
+function createReport(eventHistory, uniqueChars) {
 
   fs.readFile('report_template.html', 'utf-8', (err, html) => {
     if (err) throw err;
@@ -41,96 +33,59 @@ function createReport(eventHistory, uniquePlayers) {
     const document = dom.window.document;
 
     const element = document.querySelector('#script');
-    element.setAttribute('report-data', JSON.stringify(eventHistory));
 
 
-
-    /*
-    presentUniquePlayers = Array.from(eventHistory.reduce((uniquePlayerSet, currEvent) => {
-      uniquePlayerSet.add(currEvent.char);
-      return uniquePlayerSet;
-    }, new Set()));
-    */
-    
-    //console.log(presentUniquePlayers);
-    element.setAttribute('y-labels', JSON.stringify(Array.from(uniquePlayers)));
-    fs.writeFile(output_filename, dom.serialize(), (err) => {
+    element.setAttribute('report-data', JSON.stringify(createChartJsDatasets(categorizeEvents(eventHistory, 'class'))));
+    element.setAttribute('y-labels', JSON.stringify(Array.from(uniqueChars)));
+    fs.writeFile(outputFilename, dom.serialize(), (err) => {
       if (err) throw err;
-      console.log('HTML saved to output.html');
+      console.log(`HTML saved to ${outputFilename}`);
     });
   });
 }
 
-
-async function getGainExperienceIdDescMap() {
-  const url = 'https://census.daybreakgames.com/get/ps2/experience?c:limit=10000'
-  const response = await axios.get(url);
-  const map = response.data.experience_list.reduce( (acc, currEvent) => {
-    acc[currEvent.experience_id] = currEvent.description;
-    return acc;
-  }, {});
-  return map;
-}
-
-function getMemberNames(outfitTag) {
-  let memberNames = [];
-  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/outfit/?alias_lower=${outfitTag.toLowerCase()}&c:resolve=member_character(name,members_character_id)`
-  const res = request('GET', url);
-  const data = JSON.parse(res.getBody('utf8'));
-  for(member of data.outfit_list[0].members) {
-    memberNames.push(member.name.first);
-  }
-  return memberNames;
-}
-
-async function getPlayerIdNameMap(playerNames) {
-  // map names onto promises of requests for corresponding ids
-  const promises = playerNames.map(name => {
-    const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/character/?name.first_lower=${name.toLowerCase()}`;
-    return axios.get(url);
-  });
-
-  // resolve promises to responses
-  const responses = await Promise.all(promises);
-
-  // map responses onto ids
-  let playerIds = responses.map(response => {
-    const data = response.data;
-    if (data.character_list.length > 0) {
-      return data.character_list[0].character_id;
+function categorizeEvents(eventHistory, property) {
+  categorized = {};
+  eventHistory.forEach(event => {
+    currPropertyValue = event[property];
+    if (currPropertyValue in categorized) {
+      categorized[currPropertyValue].push(event);
     } else {
-      return null;
+      categorized[currPropertyValue] = [event];
+      console.log(currPropertyValue);
     }
+
   });
-  return mapTwoArrays(playerIds, playerNames);
+  console.log(Object.keys(categorized));
+  for (let [key, value] of Object.entries(categorized)) {
+    console.log(value.length);
+  }
+  
+  return categorized;
+  }
+
+function randomColorStr() {
+  let randChannelVal = () => {
+    return Math.floor(Math.random() * 256);
+  }
+  return `rgba(${randChannelVal()}, ${randChannelVal()}, ${randChannelVal()}, 0.5)`;
 }
 
-function mapTwoArrays(keys, values) {
-  map = keys.reduce( (accumulated, currKey, currIndex) => {
-    accumulated[currKey] = values[currIndex];
-    return accumulated;
-  }, {});
-  return map;
+function createChartJsDatasets(categorizedEvents) {
+
+  const pointRadius = 7;
+  let datasets = [];
+  for (let [category, events] of Object.entries(categorizedEvents)) {
+    console.log(category);
+    datasets.push( {label:category, data:events, pointRadius:pointRadius, backgroundColor:randomColorStr() } );
+    console.log(datasets[datasets.length-1]);
+  }
+  return datasets;
 }
 
 // =================================== MAIN EXECUTION ===================
 async function main() {
 
-
-
-  //idNameMap = await getPlayerIdNameMap(trackedPlayers);
-  const idNameMap = await getPlayerIdNameMap(getMemberNames('vstd'));
-  //const idNameMap = await getPlayerIdNameMap(['Yipsys', 'Selbstverwaltenderauserirdischer', 'BobsquddleHasComeToRecolonise', 'bananaMangoFestival2O23']);
-
-  const trackedIds = Object.keys(idNameMap);
-  console.log(idNameMap);
-  //console.log(trackedIds);
-
-  var eventHistory = {'General':[], 'Infantry':[], 'MAX':[], 'Ground':[], 'Air':[]};
-  var uniquePlayers = new Set();
-
-  const gainXpIdDescMap = await getGainExperienceIdDescMap();
-  //console.log(gainXpIdDescMap);
 
 
   // ================================== DISCORD =====================================
@@ -157,24 +112,45 @@ async function main() {
 
   client.on('interactionCreate', async interaction => {
     if (!interaction.isCommand()) return;
-  
     const { commandName } = interaction;
-  
     if (commandName === 'ping') {
       await interaction.reply('Pong!');
     } else if (commandName === 'debug') {
       const eventHistoryStr = JSON.stringify(eventHistory, null, '\t');
       //console.log(eventHistoryStr)
-      
-      createReport(eventHistory, uniquePlayers);
-      await interaction.reply({ files: [output_filename]})
+      createReport(eventHistory, uniqueChars);
+      await interaction.reply({ files: [outputFilename]})
     }
   });
   
-
-  client.login(config.token);
+  client.login(token);
 
   // =============================== PS2 STREAMING API ===================================
+
+  const census_promises = [
+    census.getFactionMap(),
+    census.getLoadoutMap(),
+    census.getWeaponMap(),
+    census.getVehicleMap(),
+    census.getGainXpMap()
+  ];
+
+  const [
+    factionMap,
+    loadoutMap,
+    weaponMap,
+    vehicleMap,
+    gainXpMap
+  ] = await Promise.all(census_promises);
+  console.log('Census promises resolved!');
+
+  const charMap = await census.getCharacterMap(await census.getMemberNames('hhzs'));
+  const trackedIds = Object.keys(charMap);
+  //console.log(charMap);
+
+  var eventHistory = [];
+  var uniqueChars = new Set();
+
 
   // Create a new WebSocket connection to the Daybreak API websocket endpoint
   const ws = new WebSocket(`wss://push.planetside2.com/streaming?environment=ps2&service-id=s:${serviceId}`);
@@ -185,7 +161,7 @@ async function main() {
     action: 'subscribe',
     characters: trackedIds,
     worlds: ['all'],
-    eventNames: ['GainExperience'], //'Death', 'PlayerLogin', 'PlayerLogout'],
+    eventNames: ['GainExperience', 'Death'], //'PlayerLogin', 'PlayerLogout'],
     logicalAndCharactersWithWorlds:true
   }
 
@@ -201,16 +177,12 @@ async function main() {
   // Listen for incoming messages from the websocket
   ws.on('message', message => {
     const data = JSON.parse(message);
-    
     // Check if the message is a player login event
     if (data.type === 'serviceMessage') { // && data.payload.event_name === 'PlayerLogin') {
-      const characterId = data.payload.character_id;
-      if( !(characterId in idNameMap) ) {
-        console.log(`unknown ID: ${characterId} for ${gainXpIdDescMap[data.payload.experience_id]} event`);
-        return;
-      }
-      //console.log(memberIds.includes(characterId));
-      const timestamp = data.payload.timestamp;
+      p = data.payload;
+      const charId = p.character_id;
+      let eventName = p.event_name;
+      const timestamp = p.timestamp;
       const date = new Date(timestamp * 1000)
       const formattedDate = date.toLocaleString('ja-JP', { 
         year: 'numeric', 
@@ -222,30 +194,66 @@ async function main() {
         hour12: false 
       });
 
-      let eventName = data.payload.event_name;
-      if (eventName === 'GainExperience') {
 
-        eventName = gainXpIdDescMap[data.payload.experience_id];
-      }
-      const characterName = idNameMap[characterId];
-      msg = `${formattedDate}: ${eventName} event for ${characterName}`
-      console.log(msg);
-
-      if(data.payload.experience_id in xpMap) {
-        
-        category = xpMap[data.payload.experience_id].category;
-        //eventHistory.push({timestamp: date, player: characterName, event: eventName})
-        //console.log(category);
-        eventHistory[category].push({t: formattedDate, char: characterName, event: eventName});
-        
-      } else {
-        eventHistory['General'].push({t: formattedDate, char: characterName, event: eventName});
-      }
-      uniquePlayers.add(characterName);
-
-
+      //console.log(memberIds.includes(charId));
       
+      // todo: refactor this whole bit to make more sense
 
+      let activeChar = '';
+      let passiveChar = '';
+      let loadoutId = '';
+      let metadata = '';
+      let logMessage = '';
+      let vehicle = '';
+      if (eventName === 'GainExperience') {
+        const xpEvent = gainXpMap[p.experience_id];
+        logMessage = `got ${xpEvent.xp}xp for "${xpEvent.desc}"`;
+        metadata = `${xpEvent.desc} (${xpEvent.xp}xp)`;
+        activeChar = (charId in charMap) ? charMap[charId] : '?';
+        passiveChar = (p.other_id in charMap) ? charMap[p.other_id] : '?';
+
+        loadoutId = p.loadout_id;
+        
+      } else if (eventName === 'Death') {
+        const weaponId = p.attacker_weapon_id;
+        //const weapon = (weaponId in weaponMap) ? weaponMap[weaponId].name : `weapon ${weaponId}`;
+        const weapon = (weaponId in weaponMap) ? weaponMap[weaponId].name : '?';
+        metadata = weapon
+
+        loadoutId = p.attacker_loadout_id;
+        const attackerId = p.attacker_character_id;
+        const vehicleId = p.attacker_vehicle_id;
+        if (vehicleId === '0') {
+          logMessage = `got a kill using a ${weapon}`;
+        } else {
+          vehicle = vehicleMap[vehicleId]
+          logMessage = `got a kill using a ${vehicle} (${weapon})`;
+        }
+
+        activeChar = (attackerId in charMap) ? charMap[attackerId] : '?';
+        passiveChar = (charId in charMap) ? charMap[charId] : '?';
+      }
+
+
+      const infantryClass = loadoutMap[loadoutId].class;
+      const faction = factionMap[loadoutMap[loadoutId].factionId];
+
+      const msg = `${formattedDate}: ${activeChar} ${logMessage} as ${faction} ${infantryClass} on ${passiveChar}`;
+      
+      console.log(msg);
+      if ((eventName == 'Death' && (p.attacker_character_id in charMap)) || (eventName == 'GainExperience' && (charId in charMap))) {
+        eventHistory.push({
+          t: formattedDate, 
+          char: activeChar, 
+          otherChar: passiveChar, 
+          event: eventName, 
+          class: infantryClass, 
+          vehicle: vehicle,
+          faction: faction, 
+          meta: metadata
+        });
+        uniqueChars.add(activeChar);
+      }
       /*
       // Send a message to a Discord channel
       const channelId = '695500966690029590';

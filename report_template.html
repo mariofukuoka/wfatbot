@@ -13,46 +13,11 @@
 
 	<script id="script" y-labels="" report-data="">
 
-        const reportDataStr = document.currentScript.getAttribute('report-data');
-        const yLabelsStr = document.currentScript.getAttribute('y-labels');
-
-        const reportData = JSON.parse(reportDataStr);
-        const yLabels = JSON.parse(yLabelsStr);
+        const reportData = JSON.parse(document.currentScript.getAttribute('report-data'));
+        const yLabels = JSON.parse(document.currentScript.getAttribute('y-labels'));
 
 		const data = {
-            datasets: [
-                {
-                    label: 'General',
-                    data: reportData['General'],
-                    pointRadius: 7,
-                    backgroundColor: 'rgba(128, 128, 128, 0.5)'
-                },
-                {
-                    label: 'Infantry',
-                    data: reportData['Infantry'],
-                    pointRadius: 7,
-                    backgroundColor: 'rgba(54, 162, 235, 0.5)'
-                },
-                {
-                    label: 'Ground',
-                    data: reportData['Ground'],
-                    pointRadius: 7,
-                    backgroundColor: 'rgba(75, 192, 192, 0.5)'
-                },
-                {
-                    label: 'Air',
-                    data: reportData['Air'],
-                    pointRadius: 7,
-                    backgroundColor: 'rgba(255, 99, 132, 0.5)'
-                },
-                {
-                    label: 'MAX',
-                    data: reportData['MAX'],
-                    pointRadius: 7,
-                    backgroundColor: 'rgba(255, 205, 86, 0.5)'
-                }
-
-            ]
+            datasets: reportData
         };
 
         const config = {
@@ -89,7 +54,11 @@
                         callbacks: {
                             label: (context) => {
                                 const point = context.raw;
-                                return `${point.event}`;
+                                if (point.event == 'Death') {
+                                    return `Kill using ${point.meta}`
+                                } else {
+                                    return point.meta;
+                                }
                             }
                         }
                     }
