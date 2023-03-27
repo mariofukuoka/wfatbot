@@ -6,6 +6,7 @@ const census = require('./census-funcs')
 const { token, serviceId } = require('./config.json');
 const fs = require('fs');
 const sqlite3 = require('better-sqlite3');
+const trackedExperienceEvents = require('./tracked-experience-events.json');
 
 // todo: use actual attribute names in the json here, then replace the 
 // key names with "x" and "y" used by chart.js when sending it over
@@ -74,6 +75,63 @@ const insertDeathEvent = db.prepare(`INSERT INTO deathEvents (
   $server,
   $continent
 )`);
+
+db.exec(`CREATE TABLE experienceEvents (
+  id INTEGER PRIMARY KEY,
+  timestamp INTEGER,
+  characterId TEXT,
+  character TEXT,
+  class TEXT,
+  faction TEXT,
+  otherId TEXT,
+  other TEXT,
+  experienceId TEXT,
+  description TEXT,
+  amount INTEGER,
+  server TEXT,
+  continent TEXT
+)`);
+
+const insertExperienceEvent = db.prepare(`INSERT INTO experienceEvents (
+  timestamp,
+  characterId,
+  character,
+  class,
+  faction,
+  otherId,
+  other,
+  experienceId,
+  description,
+  amount,
+  server,
+  continent
+) VALUES (
+  $timestamp,
+  $characterId,
+  $character,
+  $class,
+  $faction,
+  $otherId,
+  $other,
+  $experienceId,
+  $description,
+  $amount,
+  $server,
+  $continent
+)`);
+
+/*           timestamp: p.timestamp,
+          characterId: p.character_id,
+          character: charMap[p.character_id],
+          class: loadoutMap[p.loadout_id].class,
+          faction: factionMap[loadoutMap[p.loadout_id].factionId],
+          otherId: p.other_id,
+          other: charMap[p.other_id],
+          experienceId: p.experience_id,
+          description: experienceMap[p.experience_id].desc, 
+          amount: p.amount,
+          server: worldMap[p.world_id],
+          continent: zoneMap[p.zone_id] */
 
 // ============================= Functions ==============================
 
@@ -216,7 +274,7 @@ async function main() {
       //console.log(eventHistoryStr)
       //createReport(eventHistory, uniqueChars);
       //await interaction.reply({ files: [outputFilename]})
-      console.log(db.prepare('SELECT * FROM deathEvents').all());
+      console.log(db.prepare('SELECT * FROM experienceEvents').all());
     }
   });
   
@@ -269,14 +327,14 @@ async function main() {
     action: 'subscribe',
     characters: trackedIds,
     worlds: ['all'],
-    eventNames: [
-      'GainExperience', 
+    eventNames: [      
+      ...trackedExperienceEvents,
       'Death', 
       'VehicleDestroy', 
       'PlayerFacilityCapture',
       'PlayerFacilityDefend',
       'ItemAdded',
-      'SkillAdded'
+      'SkillAdded',
       //'PlayerLogin',
       //'PlayerLogout'
     ], //'PlayerLogin', 'PlayerLogout'],
@@ -301,83 +359,32 @@ async function main() {
       //let entry = {timestamp: p.timestamp, eventName: p.event_name, char: p.character_id};
       //eventHistory.push(p);
 
-      if (p.event_name !== 'Death') {
-        return;
-      }
-      
-      //const char = (p.character_id in charMap) ? charMap[p.character_id] : p.character_id;
-      let msg = `${timestampToDate(p.timestamp)}: [${p.event_name}]`;
-
-      for (const [k, v] of Object.entries(p)) {
-        switch (k) {
-          case 'character_id':
-            msg += ` char: ${repr(v, charMap)}`;
-            break;
-          case 'other_id':
-            msg += ` other: ${repr(v, charMap)}`;
-            break;
-          case 'attacker_character_id':
-            msg += ` attacker: ${repr(v, charMap)}`;
-            break;
-          case 'vehicle_id':
-            msg += ` vehicle: ${repr(v, vehicleMap)}`;
-            break;
-          case 'attacker_vehicle_id':
-            msg += ` attacker vehicle: ${repr(v, vehicleMap)}`;
-            break;
-          case 'facility_id':
-            msg += ` facility: ${repr(v, regionMap)}`;
-            break;
-          case 'item_id':
-            msg += ` item: ${repr(v, itemMap)}`;
-            break;
-          case 'skill_id':
-            msg += ` skill: ${repr(v, skillMap)}`;
-            break;
-          case 'experience_id':
-            const experience = repr(v, experienceMap);
-            msg += ` exp: ${experience.desc} (${experience.xp}xp)`;
-            break;
-          case 'character_loadout_id':
-            msg += ` class: ${repr(v, loadoutMap)}`;
-            break;
-          case 'attacker_loadout_id':
-            msg += ` class: ${repr(v, loadoutMap)}`;
-            break;
-          case 'attacker_team_id':
-            msg += ` attacker faction: ${repr(v, factionMap)}`;
-            break;
-          case 'team_id':
-            msg += ` faction: ${repr(v, factionMap)}`;
-            break;
-          case 'world_id':
-            msg += ` server: ${repr(v, worldMap)}`;
-            break;
-          case 'zone_id':
-            msg += ` continent: ${repr(v, zoneMap)}`;
-            break;
-          case 'team_id':
-            msg += ` faction: ${repr(v, factionMap)}`;
-            break;
-          default:
-            continue;
+      /* 
+      fetchCharAndUpdateMap is an async function that asynchronously fetches an unknown character's name, adds it to the charMap, 
+      then inserts the event with the updated name into the db so that when called without awaiting it will wait for the REST 
+      response and do its stuff in the background without interrupting the websocket */
+      fetchCharAndUpdateMap = async (event, charIdProperty, charNameProperty, dbInsertStatement) => {
+        const t0 = performance.now();
+        event[charNameProperty] = await census.getCharacter(event[charIdProperty]);
+        if (event[charNameProperty] != null) {
+          charMap[event[charIdProperty]] = event[charNameProperty];
         }
-        msg += ','
+        //console.log(`fetched and inserted ${deathEvent[charNameProperty]}, took ${((performance.now() - t0)/1000).toFixed(2)}s`);
+        dbInsertStatement.run(event);
+        console.log('Async',event);
       }
 
-      //console.log(msg);
-      //console.log(JSON.stringify(p));
       if (p.event_name === 'Death') {
         const deathEvent = {
           timestamp: parseInt(p.timestamp),
           attackerId: p.attacker_character_id,
           attacker: charMap[p.attacker_character_id],
-          attackerClass: loadoutMap[p.attacker_loadout_id],
+          attackerClass: loadoutMap[p.attacker_loadout_id].class,
           attackerFaction: factionMap[p.attacker_team_id],
           attackerVehicle: vehicleMap[p.attacker_vehicle_id],
           characterId: p.character_id,
           character: charMap[p.character_id],
-          class: loadoutMap[p.character_loadout_id],
+          class: loadoutMap[p.character_loadout_id].class,
           faction: factionMap[p.team_id],
           vehicle: vehicleMap[p.vehicle_id],
           isHeadshot: parseInt(p.is_headshot),
@@ -386,30 +393,39 @@ async function main() {
         }
         
         if (!(deathEvent.attackerId in charMap)) {
-          //console.log('attacker unknown', p.attacker_character_id);
-          (async () => {
-            const t0 = performance.now();
-            deathEvent.attacker = await census.getCharacter(deathEvent.attackerId);
-            if (deathEvent.attacker != null) {
-              charMap[deathEvent.attackerId] = deathEvent.attacker;
-            }
-            console.log(`${deathEvent.attacker} inserted, took ${((performance.now() - t0)/1000).toFixed(2)}s`);
-            insertDeathEvent.run(deathEvent);
-          })();
+          fetchCharAndUpdateMap(deathEvent, 'attackerId', 'attacker', insertDeathEvent);
         } else if (!(deathEvent.characterId in charMap)) {
-          //console.log('character unknown', p.character_id);
-          (async () => {
-            const t0 = performance.now();
-            deathEvent.character = await census.getCharacter(deathEvent.characterId);
-            if (deathEvent.character != null) {
-              charMap[deathEvent.characterId] = deathEvent.character;
-            }
-            console.log(`${deathEvent.character} inserted, took ${((performance.now() - t0)/1000).toFixed(2)}s`);
-            insertDeathEvent.run(deathEvent);
-          })();
+          fetchCharAndUpdateMap(deathEvent, 'characterId', 'character', insertDeathEvent);
         } else {
           insertDeathEvent.run(deathEvent);
-          console.log(deathEvent.attacker, deathEvent.character, 'both present');
+          console.log('Death', deathEvent);
+          //console.log(`${deathEvent.attacker} and ${deathEvent.character} both present`);
+        }
+      } 
+      else if (p.event_name === 'GainExperience') {
+        const xpEvent = {
+          timestamp: parseInt(p.timestamp),
+          characterId: p.character_id,
+          character: charMap[p.character_id],
+          class: loadoutMap[p.loadout_id].class,
+          faction: factionMap[loadoutMap[p.loadout_id].factionId],
+          otherId: p.other_id,
+          other: charMap[p.other_id],
+          experienceId: p.experience_id,
+          description: experienceMap[p.experience_id].desc, 
+          amount: p.amount,
+          server: worldMap[p.world_id],
+          continent: zoneMap[p.zone_id]
+        }
+
+        if (!(xpEvent.characterId in charMap)) {
+          fetchCharAndUpdateMap(xpEvent, 'characterId', 'character', insertExperienceEvent);
+        } else if (!(xpEvent.otherId in charMap && xpEvent.otherId % 2 === 1)) { // odd ids are player ids, even ids are npc ids
+          fetchCharAndUpdateMap(xpEvent, 'otherId', 'other', insertExperienceEvent);
+        } else {
+          insertExperienceEvent.run(xpEvent);
+          console.log('GainExperience', xpEvent);
+          //console.log(`${xpEvent.attacker} and ${xpEvent.character} both present`);
         }
       }
       

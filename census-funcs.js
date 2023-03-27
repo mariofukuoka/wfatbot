@@ -17,7 +17,7 @@ async function getCharacter(charId) {
     return res.data.character_list[0].name.first;
   }
   catch (e) {
-    console.log(e);
+    //console.log(e);
     return null;
   }
 }
@@ -107,7 +107,7 @@ async function getWeaponMap() {
 
 /**
  * returns a map of faction infantry classes to their names
- * @returns {{loadoutId: String}}
+ * @returns {{loadoutId: {class:, factionId:}}}
  */
 async function getLoadoutMap() {
     const url1 = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/profile/?c:limit=${limit}`
@@ -123,7 +123,7 @@ async function getLoadoutMap() {
 
     //console.log(profileMap);
     let loadoutMap = responses[1].data.loadout_list.reduce( (map, currLoadout) => {
-        map[currLoadout.loadout_id] = profileMap[currLoadout.profile_id];
+        map[currLoadout.loadout_id] = {class: profileMap[currLoadout.profile_id], factionId: currLoadout.faction_id};
         return map;
     }, {});
 
