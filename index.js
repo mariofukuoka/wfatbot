@@ -5,8 +5,8 @@ const { JSDOM } = require('jsdom');
 const census = require('./census-funcs')
 const { token, serviceId } = require('./config.json');
 const fs = require('fs');
-const sqlite3 = require('better-sqlite3');
 const trackedExperienceEvents = require('./tracked-experience-events.json');
+const dbApi = require('./database-api');
 
 // todo: use actual attribute names in the json here, then replace the 
 // key names with "x" and "y" used by chart.js when sending it over
@@ -25,100 +25,7 @@ var outputFilename = 'output_report.html'
 
 // ============================= Database setup =========================
 
-var db = sqlite3(':memory:');
-db.exec(`CREATE TABLE deathEvents (
-  id INTEGER PRIMARY KEY, 
-  timestamp INTEGER,
-  attackerId TEXT, 
-  attacker TEXT, 
-  attackerClass TEXT, 
-  attackerFaction TEXT, 
-  attackerVehicle TEXT, 
-  characterId TEXT, 
-  character TEXT, 
-  class TEXT, 
-  faction TEXT, 
-  vehicle TEXT, 
-  isHeadshot INTEGER, 
-  server TEXT, 
-  continent TEXT
-)`);
 
-const insertDeathEvent = db.prepare(`INSERT INTO deathEvents (
-  timestamp,
-  attackerId,
-  attacker,
-  attackerClass,
-  attackerFaction,
-  attackerVehicle,
-  characterId,
-  character,
-  class,
-  faction,
-  vehicle,
-  isHeadshot,
-  server,
-  continent
-) VALUES (
-  $timestamp,
-  $attackerId,
-  $attacker,
-  $attackerClass,
-  $attackerFaction,
-  $attackerVehicle,
-  $characterId,
-  $character,
-  $class,
-  $faction,
-  $vehicle,
-  $isHeadshot,
-  $server,
-  $continent
-)`);
-
-db.exec(`CREATE TABLE experienceEvents (
-  id INTEGER PRIMARY KEY,
-  timestamp INTEGER,
-  characterId TEXT,
-  character TEXT,
-  class TEXT,
-  faction TEXT,
-  otherId TEXT,
-  other TEXT,
-  experienceId TEXT,
-  description TEXT,
-  amount INTEGER,
-  server TEXT,
-  continent TEXT
-)`);
-
-const insertExperienceEvent = db.prepare(`INSERT INTO experienceEvents (
-  timestamp,
-  characterId,
-  character,
-  class,
-  faction,
-  otherId,
-  other,
-  experienceId,
-  description,
-  amount,
-  server,
-  continent
-) VALUES (
-  $timestamp,
-  $characterId,
-  $character,
-  $class,
-  $faction,
-  $otherId,
-  $other,
-  $experienceId,
-  $description,
-  $amount,
-  $server,
-  $continent
-)`);
 
 /*           timestamp: p.timestamp,
           characterId: p.character_id,
@@ -274,7 +181,7 @@ async function main() {
       //console.log(eventHistoryStr)
       //createReport(eventHistory, uniqueChars);
       //await interaction.reply({ files: [outputFilename]})
-      console.log(db.prepare('SELECT * FROM experienceEvents').all());
+      console.log(dbApi.db.prepare('SELECT * FROM experienceEvents').all());
     }
   });
   
@@ -361,7 +268,7 @@ async function main() {
 
       /* 
       fetchCharAndUpdateMap is an async function that asynchronously fetches an unknown character's name, adds it to the charMap, 
-      then inserts the event with the updated name into the db so that when called without awaiting it will wait for the REST 
+      then logs the event with the updated name into the db so that when called without awaiting it will wait for the REST 
       response and do its stuff in the background without interrupting the websocket */
       fetchCharAndUpdateMap = async (event, charIdProperty, charNameProperty, dbInsertStatement) => {
         const t0 = performance.now();
@@ -392,12 +299,13 @@ async function main() {
           continent: zoneMap[p.zone_id]
         }
         
+        // if either one of the ids is missing from the charMap, fetch it and update the map
         if (!(deathEvent.attackerId in charMap)) {
-          fetchCharAndUpdateMap(deathEvent, 'attackerId', 'attacker', insertDeathEvent);
+          fetchCharAndUpdateMap(deathEvent, 'attackerId', 'attacker', dbApi.logDeathEvent);
         } else if (!(deathEvent.characterId in charMap)) {
-          fetchCharAndUpdateMap(deathEvent, 'characterId', 'character', insertDeathEvent);
+          fetchCharAndUpdateMap(deathEvent, 'characterId', 'character', dbApi.logDeathEvent);
         } else {
-          insertDeathEvent.run(deathEvent);
+          dbApi.logDeathEvent.run(deathEvent);
           console.log('Death', deathEvent);
           //console.log(`${deathEvent.attacker} and ${deathEvent.character} both present`);
         }
@@ -418,90 +326,17 @@ async function main() {
           continent: zoneMap[p.zone_id]
         }
 
+        // if either one of the ids is missing from the charMap, fetch it and update the map
         if (!(xpEvent.characterId in charMap)) {
-          fetchCharAndUpdateMap(xpEvent, 'characterId', 'character', insertExperienceEvent);
-        } else if (!(xpEvent.otherId in charMap && xpEvent.otherId % 2 === 1)) { // odd ids are player ids, even ids are npc ids
-          fetchCharAndUpdateMap(xpEvent, 'otherId', 'other', insertExperienceEvent);
+          fetchCharAndUpdateMap(xpEvent, 'characterId', 'character', dbApi.logExperienceEvent);
+        } else if (!(xpEvent.otherId in charMap && xpEvent.otherId % 2 === 1)) { // only try fetching for player (odd) ids, not npc ids
+          fetchCharAndUpdateMap(xpEvent, 'otherId', 'other', dbApi.logExperienceEvent);
         } else {
-          insertExperienceEvent.run(xpEvent);
+          dbApi.logExperienceEvent.run(xpEvent);
           console.log('GainExperience', xpEvent);
-          //console.log(`${xpEvent.attacker} and ${xpEvent.character} both present`);
         }
       }
-      
-      /* 
-      //console.log(memberIds.includes(charId));
-      
-      // todo: refactor this whole bit to make more sense
-
-      let activeChar = '';
-      let passiveChar = '';
-      let loadoutId = '';
-      let metadata = '';
-      let logMessage = '';
-      let vehicle = '';
-      
-      if (eventName === 'GainExperience') {
-        const xpEvent = experienceMap[p.experience_id];
-        logMessage = `got ${xpEvent.xp}xp for "${xpEvent.desc}"`;
-        metadata = `${xpEvent.desc} (${xpEvent.xp}xp)`;
-        activeChar = (charId in charMap) ? charMap[charId] : '?';
-        passiveChar = (p.other_id in charMap) ? charMap[p.other_id] : '?';
-
-        loadoutId = p.loadout_id;
-        
-      } else if (eventName === 'Death') {
-        const weaponId = p.attacker_weapon_id;
-        //const weapon = (weaponId in weaponMap) ? weaponMap[weaponId].name : `weapon ${weaponId}`;
-        //const weapon = (weaponId in weaponMap) ? weaponMap[weaponId].name : '?';
-        //console.log(`weapon ${weaponId} in itemMap: ${weaponId in itemMap}`);
-        const weapon = (weaponId in itemMap) ? itemMap[weaponId] : weaponId;
-        
-        metadata = weapon
-
-        loadoutId = p.attacker_loadout_id;
-        const attackerId = p.attacker_character_id;
-        const vehicleId = p.attacker_vehicle_id;
-        if (vehicleId === '0') {
-          logMessage = `got a kill using a ${weapon}`;
-        } else {
-          vehicle = vehicleMap[vehicleId]
-          logMessage = `got a kill using a ${vehicle} (${weapon})`;
-        }
-
-        activeChar = (attackerId in charMap) ? charMap[attackerId] : '?';
-        passiveChar = (charId in charMap) ? charMap[charId] : '?';
-      }
-
-
-      const infantryClass = loadoutMap[loadoutId].class;
-      const faction = factionMap[loadoutMap[loadoutId].factionId];
-
-      const msg = `${formattedDate}: ${activeChar} ${logMessage} as ${faction} ${infantryClass} on ${passiveChar}`;
-      
-      if (eventName === 'Death') {
-        console.log(msg);
-      }
-      
-      if ((eventName == 'Death' && (p.attacker_character_id in charMap)) || (eventName == 'GainExperience' && (charId in charMap))) {
-        eventHistory.push({
-          t: formattedDate, 
-          char: activeChar, 
-          otherChar: passiveChar, 
-          event: eventName, 
-          class: infantryClass, 
-          vehicle: vehicle,
-          faction: faction, 
-          meta: metadata
-        });
-        uniqueChars.add(activeChar);
-      } */
-      /*
-      // Send a message to a Discord channel
-      const channelId = '695500966690029590';
-      const channel = client.channels.cache.get(channelId); // Replace with your channel ID
-      channel.send(msg);
-      */
+    
     }
   });
 
