@@ -28,12 +28,12 @@ var db = sqlite3(':memory:');
 db.exec(`CREATE TABLE deathEvents (
   id INTEGER PRIMARY KEY, 
   timestamp INTEGER,
-  attackerId INTEGER, 
+  attackerId TEXT, 
   attacker TEXT, 
   attackerClass TEXT, 
   attackerFaction TEXT, 
   attackerVehicle TEXT, 
-  characterId INTEGER, 
+  characterId TEXT, 
   character TEXT, 
   class TEXT, 
   faction TEXT, 
@@ -370,12 +370,12 @@ async function main() {
       if (p.event_name === 'Death') {
         const deathEvent = {
           timestamp: parseInt(p.timestamp),
-          attackerId: parseInt(p.attacker_character_id),
+          attackerId: p.attacker_character_id,
           attacker: charMap[p.attacker_character_id],
           attackerClass: loadoutMap[p.attacker_loadout_id],
           attackerFaction: factionMap[p.attacker_team_id],
           attackerVehicle: vehicleMap[p.attacker_vehicle_id],
-          characterId: parseInt(p.character_id),
+          characterId: p.character_id,
           character: charMap[p.character_id],
           class: loadoutMap[p.character_loadout_id],
           faction: factionMap[p.team_id],
@@ -384,8 +384,33 @@ async function main() {
           server: worldMap[p.world_id],
           continent: zoneMap[p.zone_id]
         }
-        console.log(deathEvent);
-        insertDeathEvent.run(deathEvent);
+        
+        if (!(deathEvent.attackerId in charMap)) {
+          //console.log('attacker unknown', p.attacker_character_id);
+          (async () => {
+            const t0 = performance.now();
+            deathEvent.attacker = await census.getCharacter(deathEvent.attackerId);
+            if (deathEvent.attacker != null) {
+              charMap[deathEvent.attackerId] = deathEvent.attacker;
+            }
+            console.log(`${deathEvent.attacker} inserted, took ${((performance.now() - t0)/1000).toFixed(2)}s`);
+            insertDeathEvent.run(deathEvent);
+          })();
+        } else if (!(deathEvent.characterId in charMap)) {
+          //console.log('character unknown', p.character_id);
+          (async () => {
+            const t0 = performance.now();
+            deathEvent.character = await census.getCharacter(deathEvent.characterId);
+            if (deathEvent.character != null) {
+              charMap[deathEvent.characterId] = deathEvent.character;
+            }
+            console.log(`${deathEvent.character} inserted, took ${((performance.now() - t0)/1000).toFixed(2)}s`);
+            insertDeathEvent.run(deathEvent);
+          })();
+        } else {
+          insertDeathEvent.run(deathEvent);
+          console.log(deathEvent.attacker, deathEvent.character, 'both present');
+        }
       }
       
       /* 

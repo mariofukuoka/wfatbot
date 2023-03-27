@@ -10,10 +10,22 @@ function mapTwoArrays(keys, values) {
     return map;
 }
 
+async function getCharacter(charId) {
+  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/character/?character_id=${charId}&c:show=name.first`;
+  const res = await axios.get(url);
+  try {
+    return res.data.character_list[0].name.first;
+  }
+  catch (e) {
+    console.log(e);
+    return null;
+  }
+}
+
 async function getCharacterMap(charNames) {
     // map names onto promises of requests for corresponding ids
     const promises = charNames.map(name => {
-        const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/character/?name.first_lower=${name.toLowerCase()}`;
+        const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/character/?name.first_lower=${name.toLowerCase()}&c:show=character_id`;
         return axios.get(url);
     });
   
@@ -258,13 +270,14 @@ async function getSkillMap() {
   return skillMap;
 }
 
-/* (async () => {
-    console.log(await getZoneMap());
+/*(async () => {
+    console.log(await getCharacter('5428039961797795393'));
 })(); */
 
 
 // set exports to allow main file to access funcs
 module.exports = {
+    getCharacter,
     getCharacterMap,
     getMemberNames,
     getExperienceMap,
