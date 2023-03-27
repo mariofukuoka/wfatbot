@@ -96,8 +96,8 @@ async function getWeaponMap() {
                 // if multiple items are assigned to the same weapon, it means it's a common pool weapon, so set faction to 0 i.e. none
                 map[currWeapon].faction_id = '0';
             }
-            let faction_id = ('faction_id' in currItem) ? currItem.faction_id : '0';
-            map[currWeapon] = {name: currItem.name.en, factionId: faction_id}; //, item_id: currItem.item_id};
+            //let faction_id = ('faction_id' in currItem) ? currItem.faction_id : '0';
+            map[currWeapon] = currItem.name.en; //{name: currItem.name.en, factionId: faction_id}; //, item_id: currItem.item_id};
         }
         return map;
     }, {});
@@ -188,7 +188,7 @@ async function getItemMap() {
     try {
       map[currItem.item_id] = currItem.name.en;
     } catch(e) {
-      console.log(`item ${currItem.item_id} has an undefined name`);
+      //console.log(`item ${currItem.item_id} has an undefined name`);
     }
     return map;
   }, {});
@@ -207,7 +207,7 @@ async function getRegionMap() {
     try {
       map[currRegion.region_id] = currRegion.name.en;
     } catch(e) {
-      console.log(`region ${currRegion.region_id} has an undefined name`);
+      //console.log(`region ${currRegion.region_id} has an undefined name`);
     }
     return map;
   }, {});
@@ -225,7 +225,7 @@ async function getZoneMap() {
     try {
       map[currZone.zone_id] = currZone.name.en;
     } catch(e) {
-      console.log(`zone ${currZone.zone_id} has an undefined name`);
+      //console.log(`zone ${currZone.zone_id} has an undefined name`);
     }
     return map;
   }, {});
@@ -244,7 +244,7 @@ async function getWorldMap() {
     try {
       map[currWorld.world_id] = currWorld.name.en;
     } catch(e) {
-      console.log(`world ${currWorld.world_id} has an undefined name`);
+      //console.log(`world ${currWorld.world_id} has an undefined name`);
     }
     return map;
   }, {});
@@ -263,7 +263,7 @@ async function getSkillMap() {
     try {
       map[currSkill.skill_id] = currSkill.name.en;
     } catch(e) {
-      console.log(`skill ${currSkill.skill_id} has an undefined name`);
+      //console.log(`skill ${currSkill.skill_id} has an undefined name`);
     }
     return map;
   }, {});

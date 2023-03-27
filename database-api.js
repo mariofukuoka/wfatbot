@@ -11,14 +11,16 @@ db.exec(`CREATE TABLE deathEvents (
   attackerClass TEXT, 
   attackerFaction TEXT, 
   attackerVehicle TEXT, 
+  attackerWeaponId TEXT,
+  attackerWeapon TEXT,
   characterId TEXT, 
   character TEXT, 
   class TEXT, 
   faction TEXT, 
   vehicle TEXT, 
   isHeadshot INTEGER, 
-  server TEXT, 
-  continent TEXT
+  continent TEXT,
+  server TEXT
 )`);
 
 const logDeathEvent = db.prepare(`INSERT INTO deathEvents (
@@ -28,14 +30,16 @@ const logDeathEvent = db.prepare(`INSERT INTO deathEvents (
   attackerClass,
   attackerFaction,
   attackerVehicle,
+  attackerWeaponId,
+  attackerWeapon,
   characterId,
   character,
   class,
   faction,
   vehicle,
   isHeadshot,
-  server,
-  continent
+  continent,
+  server
 ) VALUES (
   $timestamp,
   $attackerId,
@@ -43,14 +47,16 @@ const logDeathEvent = db.prepare(`INSERT INTO deathEvents (
   $attackerClass,
   $attackerFaction,
   $attackerVehicle,
+  $attackerWeaponId,
+  $attackerWeapon,
   $characterId,
   $character,
   $class,
   $faction,
   $vehicle,
   $isHeadshot,
-  $server,
-  $continent
+  $continent,
+  $server
 )`);
 
 db.exec(`CREATE TABLE experienceEvents (
@@ -65,8 +71,8 @@ db.exec(`CREATE TABLE experienceEvents (
   experienceId TEXT,
   description TEXT,
   amount INTEGER,
-  server TEXT,
-  continent TEXT
+  continent TEXT,
+  server TEXT
 )`);
 
 const logExperienceEvent = db.prepare(`INSERT INTO experienceEvents (
@@ -93,13 +99,65 @@ const logExperienceEvent = db.prepare(`INSERT INTO experienceEvents (
   $experienceId,
   $description,
   $amount,
-  $server,
-  $continent
+  $continent,
+  $server
 )`);
 
+
+db.exec(`CREATE TABLE vehicleDestroyEvents (
+    id INTEGER PRIMARY KEY, 
+    timestamp INTEGER,
+    attackerId TEXT, 
+    attacker TEXT, 
+    attackerClass TEXT, 
+    attackerFaction TEXT, 
+    attackerVehicle TEXT, 
+    attackerWeaponId TEXT,
+    attackerWeapon TEXT,
+    characterId TEXT, 
+    character TEXT, 
+    faction TEXT, 
+    vehicle TEXT, 
+    continent TEXT,
+    server TEXT
+  )`);
+
+  const logVehicleDestroyEvent = db.prepare(`INSERT INTO vehicleDestroyEvents (
+    timestamp,
+    attackerId, 
+    attacker, 
+    attackerClass, 
+    attackerFaction, 
+    attackerVehicle, 
+    attackerWeaponId,
+    attackerWeapon,
+    characterId, 
+    character, 
+    faction, 
+    vehicle, 
+    continent,
+    server
+  ) VALUES (
+    $timestamp,
+    $attackerId, 
+    $attacker, 
+    $attackerClass, 
+    $attackerFaction, 
+    $attackerVehicle, 
+    $attackerWeaponId,
+    $attackerWeapon,
+    $characterId, 
+    $character, 
+    $faction, 
+    $vehicle, 
+    $continent,
+    $server
+  )`);
+  
 
 module.exports = {
     db,
     logDeathEvent,
-    logExperienceEvent
+    logExperienceEvent,
+    logVehicleDestroyEvent
 }

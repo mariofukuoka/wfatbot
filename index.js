@@ -23,29 +23,7 @@ var trackedPlayers = ['kurohagane', 'lukas1233', 'yippys'];
 
 var outputFilename = 'output_report.html'
 
-// ============================= Database setup =========================
-
-
-
-/*           timestamp: p.timestamp,
-          characterId: p.character_id,
-          character: charMap[p.character_id],
-          class: loadoutMap[p.loadout_id].class,
-          faction: factionMap[loadoutMap[p.loadout_id].factionId],
-          otherId: p.other_id,
-          other: charMap[p.other_id],
-          experienceId: p.experience_id,
-          description: experienceMap[p.experience_id].desc, 
-          amount: p.amount,
-          server: worldMap[p.world_id],
-          continent: zoneMap[p.zone_id] */
-
 // ============================= Functions ==============================
-
-function repr(str, map) {
-  // get the mapping if it exists
-  return (str in map) ? map[str] : str;
-}
 
 function timestampToDate(timestamp) {
   const date = new Date(timestamp * 1000)
@@ -155,13 +133,10 @@ async function main() {
 
   // When the client is ready, run this code (only once)
   // We use 'c' for the event parameter to keep it separate from the already defined 'client'
-  client.once(Events.ClientReady, c => {
-    console.log(`Ready! Logged in as ${c.user.tag}`);
-  });
 
   // Discord bot setup
   client.on('ready', () => {
-    console.log(`Logged in as ${client.user.tag}!`);
+    console.log(`Discord: Logged in as ${client.user.tag}!`);
   });
 
   client.on('message', msg => {
@@ -190,7 +165,7 @@ async function main() {
   // =============================== PS2 STREAMING API ===================================
 
   const censusPromises = [
-    census.getCharacterMap(await census.getMemberNames('hhzs')),
+    census.getCharacterMap(await census.getMemberNames('vstd')),
     census.getFactionMap(),
     census.getLoadoutMap(),
     census.getWeaponMap(),
@@ -216,7 +191,7 @@ async function main() {
     worldMap,
     skillMap
   ] = await Promise.all(censusPromises);
-  console.log('Census promises resolved!');
+  console.log('Census: promises resolved!');
 
   const trackedIds = Object.keys(charMap);
   //console.log(charMap);
@@ -251,7 +226,7 @@ async function main() {
 
   // Listen for the 'open' event, indicating that the connection to the websocket has been established
   ws.on('open', () => {
-    console.log('Connected to Daybreak API websocket');
+    console.log('Websocket: Connected to Daybreak streaming API');
     
     // Subscribe to the player login event stream
     ws.send(JSON.stringify(subJSON));
@@ -266,6 +241,12 @@ async function main() {
       //let entry = {timestamp: p.timestamp, eventName: p.event_name, char: p.character_id};
       //eventHistory.push(p);
 
+      if ('attacker_character_id' in p && p.attacker_character_id === '0') { // filter out tutorial events
+        //console.log('Event from tutorial zone', p);
+        return;
+      }
+
+      console.log(p.event_name);
       /* 
       fetchCharAndUpdateMap is an async function that asynchronously fetches an unknown character's name, adds it to the charMap, 
       then logs the event with the updated name into the db so that when called without awaiting it will wait for the REST 
@@ -278,7 +259,7 @@ async function main() {
         }
         //console.log(`fetched and inserted ${deathEvent[charNameProperty]}, took ${((performance.now() - t0)/1000).toFixed(2)}s`);
         dbInsertStatement.run(event);
-        console.log('Async',event);
+        console.log(`cached ${event[charNameProperty]} (${event[charIdProperty]})`);
       }
 
       if (p.event_name === 'Death') {
@@ -289,14 +270,16 @@ async function main() {
           attackerClass: loadoutMap[p.attacker_loadout_id].class,
           attackerFaction: factionMap[p.attacker_team_id],
           attackerVehicle: vehicleMap[p.attacker_vehicle_id],
+          attackerWeaponId: p.attacker_weapon_id,
+          attackerWeapon: itemMap[p.attacker_weapon_id],
           characterId: p.character_id,
           character: charMap[p.character_id],
           class: loadoutMap[p.character_loadout_id].class,
           faction: factionMap[p.team_id],
           vehicle: vehicleMap[p.vehicle_id],
           isHeadshot: parseInt(p.is_headshot),
-          server: worldMap[p.world_id],
-          continent: zoneMap[p.zone_id]
+          continent: zoneMap[p.zone_id],
+          server: worldMap[p.world_id]
         }
         
         // if either one of the ids is missing from the charMap, fetch it and update the map
@@ -306,12 +289,41 @@ async function main() {
           fetchCharAndUpdateMap(deathEvent, 'characterId', 'character', dbApi.logDeathEvent);
         } else {
           dbApi.logDeathEvent.run(deathEvent);
-          console.log('Death', deathEvent);
+          console.log(`${deathEvent.attacker} ${deathEvent.character} both present already`);
           //console.log(`${deathEvent.attacker} and ${deathEvent.character} both present`);
         }
       } 
+      else if (p.event_name === 'VehicleDestroy') {
+        const vehicleDestroyEvent = {
+          timestamp: parseInt(p.timestamp),
+          attackerId: p.attacker_character_id,
+          attacker: charMap[p.attacker_character_id],
+          attackerClass: (p.attacker_loadout_id in loadoutMap) ? loadoutMap[p.attacker_loadout_id].class : null,
+          attackerFaction: (p.attacker_loadout_id in loadoutMap) ? factionMap[loadoutMap[p.attacker_loadout_id].factionId] : null,
+          attackerVehicle: vehicleMap[p.attacker_vehicle_id],
+          attackerWeaponId: p.attacker_weapon_id,
+          attackerWeapon: itemMap[p.attacker_weapon_id],
+          characterId: p.character_id,
+          character: charMap[p.character_id],
+          faction: factionMap[p.faction_id],
+          vehicle: vehicleMap[p.vehicle_id],
+          facility: regionMap[p.facility_id],
+          continent: zoneMap[p.zone_id],
+          server: worldMap[p.world_id]
+        }
+        
+        if (!(vehicleDestroyEvent.attackerId in charMap)) {
+          fetchCharAndUpdateMap(vehicleDestroyEvent, 'attackerId', 'attacker', dbApi.logVehicleDestroyEvent);
+        } else if (!(vehicleDestroyEvent.characterId in charMap)) {
+          fetchCharAndUpdateMap(vehicleDestroyEvent, 'characterId', 'character', dbApi.logVehicleDestroyEvent);
+        } else {
+          dbApi.logVehicleDestroyEvent.run(vehicleDestroyEvent);
+          console.log(`${vehicleDestroyEvent.attacker} ${vehicleDestroyEvent.character} both present already`);
+        }
+        
+      }
       else if (p.event_name === 'GainExperience') {
-        const xpEvent = {
+        const experienceEvent = {
           timestamp: parseInt(p.timestamp),
           characterId: p.character_id,
           character: charMap[p.character_id],
@@ -322,24 +334,25 @@ async function main() {
           experienceId: p.experience_id,
           description: experienceMap[p.experience_id].desc, 
           amount: p.amount,
-          server: worldMap[p.world_id],
-          continent: zoneMap[p.zone_id]
+          continent: zoneMap[p.zone_id],
+          server: worldMap[p.world_id]
         }
 
         // if either one of the ids is missing from the charMap, fetch it and update the map
-        if (!(xpEvent.characterId in charMap)) {
-          fetchCharAndUpdateMap(xpEvent, 'characterId', 'character', dbApi.logExperienceEvent);
-        } else if (!(xpEvent.otherId in charMap && xpEvent.otherId % 2 === 1)) { // only try fetching for player (odd) ids, not npc ids
-          fetchCharAndUpdateMap(xpEvent, 'otherId', 'other', dbApi.logExperienceEvent);
+        if (!(experienceEvent.characterId in charMap)) {
+          fetchCharAndUpdateMap(experienceEvent, 'characterId', 'character', dbApi.logExperienceEvent);
+        } else if (!(experienceEvent.otherId in charMap) && experienceEvent.otherId % 2 === 1) { // only try fetching for player (odd) ids, not npc ids
+          fetchCharAndUpdateMap(experienceEvent, 'otherId', 'other', dbApi.logExperienceEvent);
         } else {
-          dbApi.logExperienceEvent.run(xpEvent);
-          console.log('GainExperience', xpEvent);
+          dbApi.logExperienceEvent.run(experienceEvent);
+          console.log(`${experienceEvent.character} ${experienceEvent.other} both present already`);
         }
       }
-    
     }
   });
-
+  ws.on('error', err => {
+    console.log('error:', err);
+  });
   ws.on('close', function close() {
     console.log('WebSocket disconnected');
   });
