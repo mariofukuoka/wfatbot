@@ -49,7 +49,7 @@ async function getMemberNames(outfitTag) {
 /**
  * @returns {{experienceId: {desc:string, xp:string}}}
  */
-async function getGainXpMap() {
+async function getExperienceMap() {
     const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2/experience?c:limit=${limit}`;
     const response = await axios.get(url);
     const map = response.data.experience_list.reduce( (acc, currEvent) => {
@@ -64,7 +64,6 @@ async function getGainXpMap() {
  * @returns {{weaponId: {name:string, factionId:string}}}
  */
 async function getWeaponMap() {
-    // returns { weaponId: {name:, factionId:} }
     const url1 = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/item_to_weapon?c:limit=${limit}`;
     const url2 = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/item?c:limit=${limit}`;
     const promises = [axios.get(url1), axios.get(url2)];
@@ -96,7 +95,7 @@ async function getWeaponMap() {
 
 /**
  * returns a map of faction infantry classes to their names
- * @returns {{loadoutId: {class:, factionId:}}}
+ * @returns {{loadoutId: String}}
  */
 async function getLoadoutMap() {
     const url1 = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/profile/?c:limit=${limit}`
@@ -112,7 +111,7 @@ async function getLoadoutMap() {
 
     //console.log(profileMap);
     let loadoutMap = responses[1].data.loadout_list.reduce( (map, currLoadout) => {
-        map[currLoadout.loadout_id] = {class: profileMap[currLoadout.profile_id], factionId: currLoadout.faction_id};
+        map[currLoadout.loadout_id] = profileMap[currLoadout.profile_id];
         return map;
     }, {});
 
@@ -165,8 +164,102 @@ async function getVehicleMap() {
     return vehicleMap;
 }
 
+/**
+ * returns a map of weapon item ids to their names
+ * @returns {{itemId: String}}
+ */
+async function getItemMap() {
+  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/item/?item_type_id=26&c:limit=${limit}` // weapon item type id
+  //const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/item/?c:limit=${limit}`
+  const response = await axios.get(url);
+  const itemMap = response.data.item_list.reduce( (map, currItem) => {
+    try {
+      map[currItem.item_id] = currItem.name.en;
+    } catch(e) {
+      console.log(`item ${currItem.item_id} has an undefined name`);
+    }
+    return map;
+  }, {});
+  return itemMap;
+}
+
+
+/**
+ * returns a map of region ids to their names
+ * @returns {{regionId: String}}
+ */
+async function getRegionMap() {
+  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/region/?&c:limit=${limit}`
+  const response = await axios.get(url);
+  const regionMap = response.data.region_list.reduce( (map, currRegion) => {
+    try {
+      map[currRegion.region_id] = currRegion.name.en;
+    } catch(e) {
+      console.log(`region ${currRegion.region_id} has an undefined name`);
+    }
+    return map;
+  }, {});
+  return regionMap;
+}
+
+/**
+ * returns a map of zone ids to their names
+ * @returns {{zoneId: String}}
+ */
+async function getZoneMap() {
+  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/zone/?&c:limit=${limit}`
+  const response = await axios.get(url);
+  const zoneMap = response.data.zone_list.reduce( (map, currZone) => {
+    try {
+      map[currZone.zone_id] = currZone.name.en;
+    } catch(e) {
+      console.log(`zone ${currZone.zone_id} has an undefined name`);
+    }
+    return map;
+  }, {});
+  return zoneMap;
+}
+
+
+/**
+ * returns a map of world ids to their names
+ * @returns {{worldId: String}}
+ */
+async function getWorldMap() {
+  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/world/?&c:limit=${limit}`
+  const response = await axios.get(url);
+  const worldMap = response.data.world_list.reduce( (map, currWorld) => {
+    try {
+      map[currWorld.world_id] = currWorld.name.en;
+    } catch(e) {
+      console.log(`world ${currWorld.world_id} has an undefined name`);
+    }
+    return map;
+  }, {});
+  return worldMap;
+}
+
+
+/**
+ * returns a map of skill ids to their names
+ * @returns {{skillId: String}}
+ */
+async function getSkillMap() {
+  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/skill/?&c:limit=${limit}`
+  const response = await axios.get(url);
+  const skillMap = response.data.skill_list.reduce( (map, currSkill) => {
+    try {
+      map[currSkill.skill_id] = currSkill.name.en;
+    } catch(e) {
+      console.log(`skill ${currSkill.skill_id} has an undefined name`);
+    }
+    return map;
+  }, {});
+  return skillMap;
+}
+
 /* (async () => {
-    console.log(await getVehicleMap());
+    console.log(await getZoneMap());
 })(); */
 
 
@@ -174,9 +267,14 @@ async function getVehicleMap() {
 module.exports = {
     getCharacterMap,
     getMemberNames,
-    getGainXpMap,
+    getExperienceMap,
     getWeaponMap,
     getLoadoutMap,
     getFactionMap,
-    getVehicleMap
+    getVehicleMap,
+    getItemMap,
+    getRegionMap,
+    getZoneMap,
+    getWorldMap,
+    getSkillMap
 }

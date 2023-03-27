@@ -2,10 +2,10 @@ const WebSocket = require('ws');
 const { Client, Events, GatewayIntentBits } = require('discord.js');
 const axios = require('axios');
 const { JSDOM } = require('jsdom');
-const xpMap = require('./xpmap.json')
 const census = require('./census-funcs')
 const { token, serviceId } = require('./config.json');
 const fs = require('fs');
+const sqlite3 = require('better-sqlite3');
 
 // todo: use actual attribute names in the json here, then replace the 
 // key names with "x" and "y" used by chart.js when sending it over
@@ -22,7 +22,79 @@ var trackedPlayers = ['kurohagane', 'lukas1233', 'yippys'];
 
 var outputFilename = 'output_report.html'
 
+// ============================= Database setup =========================
+
+var db = sqlite3(':memory:');
+db.exec(`CREATE TABLE deathEvents (
+  id INTEGER PRIMARY KEY, 
+  timestamp INTEGER,
+  attackerId INTEGER, 
+  attacker TEXT, 
+  attackerClass TEXT, 
+  attackerFaction TEXT, 
+  attackerVehicle TEXT, 
+  characterId INTEGER, 
+  character TEXT, 
+  class TEXT, 
+  faction TEXT, 
+  vehicle TEXT, 
+  isHeadshot INTEGER, 
+  server TEXT, 
+  continent TEXT
+)`);
+
+const insertDeathEvent = db.prepare(`INSERT INTO deathEvents (
+  timestamp,
+  attackerId,
+  attacker,
+  attackerClass,
+  attackerFaction,
+  attackerVehicle,
+  characterId,
+  character,
+  class,
+  faction,
+  vehicle,
+  isHeadshot,
+  server,
+  continent
+) VALUES (
+  $timestamp,
+  $attackerId,
+  $attacker,
+  $attackerClass,
+  $attackerFaction,
+  $attackerVehicle,
+  $characterId,
+  $character,
+  $class,
+  $faction,
+  $vehicle,
+  $isHeadshot,
+  $server,
+  $continent
+)`);
+
 // ============================= Functions ==============================
+
+function repr(str, map) {
+  // get the mapping if it exists
+  return (str in map) ? map[str] : str;
+}
+
+function timestampToDate(timestamp) {
+  const date = new Date(timestamp * 1000)
+  const formattedDate = date.toLocaleString('ja-JP', { 
+    year: 'numeric', 
+    month: '2-digit', 
+    day: '2-digit', 
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false 
+  });
+  return formattedDate;
+}
 
 function createReport(eventHistory, uniqueChars) {
 
@@ -43,8 +115,7 @@ function createReport(eventHistory, uniqueChars) {
     });
   });
 }
-
-function categorizeEvents(eventHistory, property) {
+/* function categorizeEvents(eventHistory, property) {
   categorized = {};
   eventHistory.forEach(event => {
     currPropertyValue = event[property];
@@ -62,7 +133,32 @@ function categorizeEvents(eventHistory, property) {
   }
   
   return categorized;
-  }
+} */
+
+function categorizeEvents(eventHistory) {
+  categorized = {};
+  eventHistory.forEach(event => {
+    let currPropertyValue = null;
+    if (event.vehicle == '') {
+      currPropertyValue = event.class;
+    } else {
+      currPropertyValue = event.vehicle;
+    }
+    if (currPropertyValue in categorized) {
+      categorized[currPropertyValue].push(event);
+    } else {
+      categorized[currPropertyValue] = [event];
+      console.log(currPropertyValue);
+    }
+
+  });
+  /* console.log(Object.keys(categorized));
+  for (let [key, value] of Object.entries(categorized)) {
+    console.log(value.length);
+  } */
+  
+  return categorized;
+}
 
 function randomColorStr() {
   let randChannelVal = () => {
@@ -116,10 +212,11 @@ async function main() {
     if (commandName === 'ping') {
       await interaction.reply('Pong!');
     } else if (commandName === 'debug') {
-      const eventHistoryStr = JSON.stringify(eventHistory, null, '\t');
+      //const eventHistoryStr = JSON.stringify(eventHistory, null, '\t');
       //console.log(eventHistoryStr)
-      createReport(eventHistory, uniqueChars);
-      await interaction.reply({ files: [outputFilename]})
+      //createReport(eventHistory, uniqueChars);
+      //await interaction.reply({ files: [outputFilename]})
+      console.log(db.prepare('SELECT * FROM deathEvents').all());
     }
   });
   
@@ -127,24 +224,35 @@ async function main() {
 
   // =============================== PS2 STREAMING API ===================================
 
-  const census_promises = [
+  const censusPromises = [
+    census.getCharacterMap(await census.getMemberNames('hhzs')),
     census.getFactionMap(),
     census.getLoadoutMap(),
     census.getWeaponMap(),
     census.getVehicleMap(),
-    census.getGainXpMap()
+    census.getExperienceMap(),
+    census.getItemMap(),
+    census.getZoneMap(),
+    census.getRegionMap(),
+    census.getWorldMap(),
+    census.getSkillMap()
   ];
 
   const [
+    charMap,
     factionMap,
     loadoutMap,
     weaponMap,
     vehicleMap,
-    gainXpMap
-  ] = await Promise.all(census_promises);
+    experienceMap,
+    itemMap,
+    zoneMap,
+    regionMap,
+    worldMap,
+    skillMap
+  ] = await Promise.all(censusPromises);
   console.log('Census promises resolved!');
 
-  const charMap = await census.getCharacterMap(await census.getMemberNames('hhzs'));
   const trackedIds = Object.keys(charMap);
   //console.log(charMap);
 
@@ -161,7 +269,17 @@ async function main() {
     action: 'subscribe',
     characters: trackedIds,
     worlds: ['all'],
-    eventNames: ['GainExperience', 'Death'], //'PlayerLogin', 'PlayerLogout'],
+    eventNames: [
+      'GainExperience', 
+      'Death', 
+      'VehicleDestroy', 
+      'PlayerFacilityCapture',
+      'PlayerFacilityDefend',
+      'ItemAdded',
+      'SkillAdded'
+      //'PlayerLogin',
+      //'PlayerLogout'
+    ], //'PlayerLogin', 'PlayerLogout'],
     logicalAndCharactersWithWorlds:true
   }
 
@@ -179,22 +297,98 @@ async function main() {
     const data = JSON.parse(message);
     // Check if the message is a player login event
     if (data.type === 'serviceMessage') { // && data.payload.event_name === 'PlayerLogin') {
-      p = data.payload;
-      const charId = p.character_id;
-      let eventName = p.event_name;
-      const timestamp = p.timestamp;
-      const date = new Date(timestamp * 1000)
-      const formattedDate = date.toLocaleString('ja-JP', { 
-        year: 'numeric', 
-        month: '2-digit', 
-        day: '2-digit', 
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false 
-      });
+      const p = data.payload;
+      //let entry = {timestamp: p.timestamp, eventName: p.event_name, char: p.character_id};
+      //eventHistory.push(p);
 
+      if (p.event_name !== 'Death') {
+        return;
+      }
+      
+      //const char = (p.character_id in charMap) ? charMap[p.character_id] : p.character_id;
+      let msg = `${timestampToDate(p.timestamp)}: [${p.event_name}]`;
 
+      for (const [k, v] of Object.entries(p)) {
+        switch (k) {
+          case 'character_id':
+            msg += ` char: ${repr(v, charMap)}`;
+            break;
+          case 'other_id':
+            msg += ` other: ${repr(v, charMap)}`;
+            break;
+          case 'attacker_character_id':
+            msg += ` attacker: ${repr(v, charMap)}`;
+            break;
+          case 'vehicle_id':
+            msg += ` vehicle: ${repr(v, vehicleMap)}`;
+            break;
+          case 'attacker_vehicle_id':
+            msg += ` attacker vehicle: ${repr(v, vehicleMap)}`;
+            break;
+          case 'facility_id':
+            msg += ` facility: ${repr(v, regionMap)}`;
+            break;
+          case 'item_id':
+            msg += ` item: ${repr(v, itemMap)}`;
+            break;
+          case 'skill_id':
+            msg += ` skill: ${repr(v, skillMap)}`;
+            break;
+          case 'experience_id':
+            const experience = repr(v, experienceMap);
+            msg += ` exp: ${experience.desc} (${experience.xp}xp)`;
+            break;
+          case 'character_loadout_id':
+            msg += ` class: ${repr(v, loadoutMap)}`;
+            break;
+          case 'attacker_loadout_id':
+            msg += ` class: ${repr(v, loadoutMap)}`;
+            break;
+          case 'attacker_team_id':
+            msg += ` attacker faction: ${repr(v, factionMap)}`;
+            break;
+          case 'team_id':
+            msg += ` faction: ${repr(v, factionMap)}`;
+            break;
+          case 'world_id':
+            msg += ` server: ${repr(v, worldMap)}`;
+            break;
+          case 'zone_id':
+            msg += ` continent: ${repr(v, zoneMap)}`;
+            break;
+          case 'team_id':
+            msg += ` faction: ${repr(v, factionMap)}`;
+            break;
+          default:
+            continue;
+        }
+        msg += ','
+      }
+
+      //console.log(msg);
+      //console.log(JSON.stringify(p));
+      if (p.event_name === 'Death') {
+        const deathEvent = {
+          timestamp: parseInt(p.timestamp),
+          attackerId: parseInt(p.attacker_character_id),
+          attacker: charMap[p.attacker_character_id],
+          attackerClass: loadoutMap[p.attacker_loadout_id],
+          attackerFaction: factionMap[p.attacker_team_id],
+          attackerVehicle: vehicleMap[p.attacker_vehicle_id],
+          characterId: parseInt(p.character_id),
+          character: charMap[p.character_id],
+          class: loadoutMap[p.character_loadout_id],
+          faction: factionMap[p.team_id],
+          vehicle: vehicleMap[p.vehicle_id],
+          isHeadshot: parseInt(p.is_headshot),
+          server: worldMap[p.world_id],
+          continent: zoneMap[p.zone_id]
+        }
+        console.log(deathEvent);
+        insertDeathEvent.run(deathEvent);
+      }
+      
+      /* 
       //console.log(memberIds.includes(charId));
       
       // todo: refactor this whole bit to make more sense
@@ -205,8 +399,9 @@ async function main() {
       let metadata = '';
       let logMessage = '';
       let vehicle = '';
+      
       if (eventName === 'GainExperience') {
-        const xpEvent = gainXpMap[p.experience_id];
+        const xpEvent = experienceMap[p.experience_id];
         logMessage = `got ${xpEvent.xp}xp for "${xpEvent.desc}"`;
         metadata = `${xpEvent.desc} (${xpEvent.xp}xp)`;
         activeChar = (charId in charMap) ? charMap[charId] : '?';
@@ -217,7 +412,10 @@ async function main() {
       } else if (eventName === 'Death') {
         const weaponId = p.attacker_weapon_id;
         //const weapon = (weaponId in weaponMap) ? weaponMap[weaponId].name : `weapon ${weaponId}`;
-        const weapon = (weaponId in weaponMap) ? weaponMap[weaponId].name : '?';
+        //const weapon = (weaponId in weaponMap) ? weaponMap[weaponId].name : '?';
+        //console.log(`weapon ${weaponId} in itemMap: ${weaponId in itemMap}`);
+        const weapon = (weaponId in itemMap) ? itemMap[weaponId] : weaponId;
+        
         metadata = weapon
 
         loadoutId = p.attacker_loadout_id;
@@ -240,7 +438,10 @@ async function main() {
 
       const msg = `${formattedDate}: ${activeChar} ${logMessage} as ${faction} ${infantryClass} on ${passiveChar}`;
       
-      console.log(msg);
+      if (eventName === 'Death') {
+        console.log(msg);
+      }
+      
       if ((eventName == 'Death' && (p.attacker_character_id in charMap)) || (eventName == 'GainExperience' && (charId in charMap))) {
         eventHistory.push({
           t: formattedDate, 
@@ -253,7 +454,7 @@ async function main() {
           meta: metadata
         });
         uniqueChars.add(activeChar);
-      }
+      } */
       /*
       // Send a message to a Discord channel
       const channelId = '695500966690029590';
