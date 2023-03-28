@@ -93,7 +93,7 @@ async function asyncMain() {
     if (characterId in charMap) { // if char already in charMap, just return that
       console.log('present:', charMap[characterId]);
       return charMap[characterId];
-    } else if (characterId === '0' || characterId % 2 === 1) { // if char's id is invalid, return null
+    } else if (characterId.slice(-1) % 2 === 0) { // if char's id is invalid (valid chars have odd ids), return null
       console.log('invalid:', characterId);
       return null;
     } else { // else retrieve it form the census API
