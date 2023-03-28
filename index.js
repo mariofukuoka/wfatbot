@@ -23,108 +23,187 @@ var trackedPlayers = ['kurohagane', 'lukas1233', 'yippys'];
 
 var outputFilename = 'output_report.html'
 
-// ============================= Functions ==============================
+// ============================= Variables =========================
+async function asyncMain() {
+  const censusPromises = [
+    census.getCharacterMap(await census.getMemberNames('hhzs')),
+    census.getFactionMap(),
+    census.getLoadoutMap(),
+    census.getWeaponMap(),
+    census.getVehicleMap(),
+    census.getExperienceMap(),
+    census.getItemMap(),
+    census.getZoneMap(),
+    census.getRegionMap(),
+    census.getWorldMap(),
+    census.getSkillMap()
+  ];
 
-function timestampToDate(timestamp) {
-  const date = new Date(timestamp * 1000)
-  const formattedDate = date.toLocaleString('ja-JP', { 
-    year: 'numeric', 
-    month: '2-digit', 
-    day: '2-digit', 
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false 
-  });
-  return formattedDate;
-}
+  const [
+    charMap,
+    factionMap,
+    loadoutMap,
+    weaponMap,
+    vehicleMap,
+    experienceMap,
+    itemMap,
+    zoneMap,
+    regionMap,
+    worldMap,
+    skillMap
+  ] = await Promise.all(censusPromises);
+  console.log('Census: promises resolved!');
+  const trackedIds = Object.keys(charMap);
+  //console.log(charMap);
 
-function createReport(eventHistory, uniqueChars) {
-
-  fs.readFile('report_template.html', 'utf-8', (err, html) => {
-    if (err) throw err;
-
-    const dom = new JSDOM(html);
-    const document = dom.window.document;
-
-    const element = document.querySelector('#script');
+  var eventHistory = [];
+  var uniqueChars = new Set();
 
 
-    element.setAttribute('report-data', JSON.stringify(createChartJsDatasets(categorizeEvents(eventHistory, 'class'))));
-    element.setAttribute('y-labels', JSON.stringify(Array.from(uniqueChars)));
-    fs.writeFile(outputFilename, dom.serialize(), (err) => {
-      if (err) throw err;
-      console.log(`HTML saved to ${outputFilename}`);
+  // Create a new WebSocket connection to the Daybreak API websocket endpoint
+  const ws = new WebSocket(`wss://push.planetside2.com/streaming?environment=ps2&service-id=s:${serviceId}`);
+
+  // subscribe to outfit member events
+  subJSON = {
+    service: 'event',
+    action: 'subscribe',
+    characters: trackedIds,
+    worlds: ['all'],
+    eventNames: [      
+      ...trackedExperienceEvents,
+      'Death', 
+      'VehicleDestroy', 
+      'PlayerFacilityCapture',
+      'PlayerFacilityDefend',
+      'ItemAdded',
+      'SkillAdded',
+      //'PlayerLogin',
+      //'PlayerLogout'
+    ], //'PlayerLogin', 'PlayerLogout'],
+    logicalAndCharactersWithWorlds:true
+  }
+
+
+  // ============================= Functions ==============================
+
+  /* 
+  fetchIfMissing either returns the character name if it's already in charMap, or if not, 
+  asynchronously fetches it from the census API and then caches is it in charMap (or returns null if invalid id)*/
+  async function fetchIfMissing (characterId) {
+    if (characterId in charMap) { // if char already in charMap, just return that
+      console.log('present:', charMap[characterId]);
+      return charMap[characterId];
+    } else if (characterId === '0' || characterId % 2 === 1) { // if char's id is invalid, return null
+      console.log('invalid:', characterId);
+      return null;
+    } else { // else retrieve it form the census API
+      const fetchedCharacter = await census.getCharacter(characterId);
+      if (fetchedCharacter != null) {
+        charMap[characterId] = fetchedCharacter;
+      }
+      console.log('fetched:', fetchedCharacter);
+      return fetchedCharacter;
+    }
+  }
+
+  function timestampToDate(timestamp) {
+    const date = new Date(timestamp * 1000)
+    const formattedDate = date.toLocaleString('ja-JP', { 
+      year: 'numeric', 
+      month: '2-digit', 
+      day: '2-digit', 
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false 
     });
-  });
-}
-/* function categorizeEvents(eventHistory, property) {
-  categorized = {};
-  eventHistory.forEach(event => {
-    currPropertyValue = event[property];
-    if (currPropertyValue in categorized) {
-      categorized[currPropertyValue].push(event);
-    } else {
-      categorized[currPropertyValue] = [event];
-      console.log(currPropertyValue);
-    }
-
-  });
-  console.log(Object.keys(categorized));
-  for (let [key, value] of Object.entries(categorized)) {
-    console.log(value.length);
+    return formattedDate;
   }
-  
-  return categorized;
-} */
 
-function categorizeEvents(eventHistory) {
-  categorized = {};
-  eventHistory.forEach(event => {
-    let currPropertyValue = null;
-    if (event.vehicle == '') {
-      currPropertyValue = event.class;
-    } else {
-      currPropertyValue = event.vehicle;
-    }
-    if (currPropertyValue in categorized) {
-      categorized[currPropertyValue].push(event);
-    } else {
-      categorized[currPropertyValue] = [event];
-      console.log(currPropertyValue);
-    }
+  function createReport(eventHistory, uniqueChars) {
 
-  });
-  /* console.log(Object.keys(categorized));
-  for (let [key, value] of Object.entries(categorized)) {
-    console.log(value.length);
+    fs.readFile('report_template.html', 'utf-8', (err, html) => {
+      if (err) throw err;
+
+      const dom = new JSDOM(html);
+      const document = dom.window.document;
+
+      const element = document.querySelector('#script');
+
+
+      element.setAttribute('report-data', JSON.stringify(createChartJsDatasets(categorizeEvents(eventHistory, 'class'))));
+      element.setAttribute('y-labels', JSON.stringify(Array.from(uniqueChars)));
+      fs.writeFile(outputFilename, dom.serialize(), (err) => {
+        if (err) throw err;
+        console.log(`HTML saved to ${outputFilename}`);
+      });
+    });
+  }
+  /* function categorizeEvents(eventHistory, property) {
+    categorized = {};
+    eventHistory.forEach(event => {
+      currPropertyValue = event[property];
+      if (currPropertyValue in categorized) {
+        categorized[currPropertyValue].push(event);
+      } else {
+        categorized[currPropertyValue] = [event];
+        console.log(currPropertyValue);
+      }
+
+    });
+    console.log(Object.keys(categorized));
+    for (let [key, value] of Object.entries(categorized)) {
+      console.log(value.length);
+    }
+    
+    return categorized;
   } */
-  
-  return categorized;
-}
 
-function randomColorStr() {
-  let randChannelVal = () => {
-    return Math.floor(Math.random() * 256);
+  function categorizeEvents(eventHistory) {
+    categorized = {};
+    eventHistory.forEach(event => {
+      let currPropertyValue = null;
+      if (event.vehicle == '') {
+        currPropertyValue = event.class;
+      } else {
+        currPropertyValue = event.vehicle;
+      }
+      if (currPropertyValue in categorized) {
+        categorized[currPropertyValue].push(event);
+      } else {
+        categorized[currPropertyValue] = [event];
+        console.log(currPropertyValue);
+      }
+
+    });
+    /* console.log(Object.keys(categorized));
+    for (let [key, value] of Object.entries(categorized)) {
+      console.log(value.length);
+    } */
+    
+    return categorized;
   }
-  return `rgba(${randChannelVal()}, ${randChannelVal()}, ${randChannelVal()}, 0.5)`;
-}
 
-function createChartJsDatasets(categorizedEvents) {
-
-  const pointRadius = 7;
-  let datasets = [];
-  for (let [category, events] of Object.entries(categorizedEvents)) {
-    console.log(category);
-    datasets.push( {label:category, data:events, pointRadius:pointRadius, backgroundColor:randomColorStr() } );
-    console.log(datasets[datasets.length-1]);
+  function randomColorStr() {
+    let randChannelVal = () => {
+      return Math.floor(Math.random() * 256);
+    }
+    return `rgba(${randChannelVal()}, ${randChannelVal()}, ${randChannelVal()}, 0.5)`;
   }
-  return datasets;
-}
 
-// =================================== MAIN EXECUTION ===================
-async function main() {
+  function createChartJsDatasets(categorizedEvents) {
 
+    const pointRadius = 7;
+    let datasets = [];
+    for (let [category, events] of Object.entries(categorizedEvents)) {
+      console.log(category);
+      datasets.push( {label:category, data:events, pointRadius:pointRadius, backgroundColor:randomColorStr() } );
+      console.log(datasets[datasets.length-1]);
+    }
+    return datasets;
+  }
+
+  // =================================== MAIN EXECUTION ===================
 
 
   // ================================== DISCORD =====================================
@@ -162,67 +241,7 @@ async function main() {
   
   client.login(token);
 
-  // =============================== PS2 STREAMING API ===================================
-
-  const censusPromises = [
-    census.getCharacterMap(await census.getMemberNames('vstd')),
-    census.getFactionMap(),
-    census.getLoadoutMap(),
-    census.getWeaponMap(),
-    census.getVehicleMap(),
-    census.getExperienceMap(),
-    census.getItemMap(),
-    census.getZoneMap(),
-    census.getRegionMap(),
-    census.getWorldMap(),
-    census.getSkillMap()
-  ];
-
-  const [
-    charMap,
-    factionMap,
-    loadoutMap,
-    weaponMap,
-    vehicleMap,
-    experienceMap,
-    itemMap,
-    zoneMap,
-    regionMap,
-    worldMap,
-    skillMap
-  ] = await Promise.all(censusPromises);
-  console.log('Census: promises resolved!');
-
-  const trackedIds = Object.keys(charMap);
-  //console.log(charMap);
-
-  var eventHistory = [];
-  var uniqueChars = new Set();
-
-
-  // Create a new WebSocket connection to the Daybreak API websocket endpoint
-  const ws = new WebSocket(`wss://push.planetside2.com/streaming?environment=ps2&service-id=s:${serviceId}`);
-
-  // subscribe to outfit member events
-  subJSON = {
-    service: 'event',
-    action: 'subscribe',
-    characters: trackedIds,
-    worlds: ['all'],
-    eventNames: [      
-      ...trackedExperienceEvents,
-      'Death', 
-      'VehicleDestroy', 
-      'PlayerFacilityCapture',
-      'PlayerFacilityDefend',
-      'ItemAdded',
-      'SkillAdded',
-      //'PlayerLogin',
-      //'PlayerLogout'
-    ], //'PlayerLogin', 'PlayerLogout'],
-    logicalAndCharactersWithWorlds:true
-  }
-
+  // =============================== WEBSOCKET LISTENERS ===================================
 
   // Listen for the 'open' event, indicating that the connection to the websocket has been established
   ws.on('open', () => {
@@ -247,106 +266,87 @@ async function main() {
       }
 
       console.log(p.event_name);
-      /* 
-      fetchCharAndUpdateMap is an async function that asynchronously fetches an unknown character's name, adds it to the charMap, 
-      then logs the event with the updated name into the db so that when called without awaiting it will wait for the REST 
-      response and do its stuff in the background without interrupting the websocket */
-      fetchCharAndUpdateMap = async (event, charIdProperty, charNameProperty, dbInsertStatement) => {
-        const t0 = performance.now();
-        event[charNameProperty] = await census.getCharacter(event[charIdProperty]);
-        if (event[charNameProperty] != null) {
-          charMap[event[charIdProperty]] = event[charNameProperty];
-        }
-        //console.log(`fetched and inserted ${deathEvent[charNameProperty]}, took ${((performance.now() - t0)/1000).toFixed(2)}s`);
-        dbInsertStatement.run(event);
-        console.log(`cached ${event[charNameProperty]} (${event[charIdProperty]})`);
-      }
 
       if (p.event_name === 'Death') {
-        const deathEvent = {
-          timestamp: parseInt(p.timestamp),
-          attackerId: p.attacker_character_id,
-          attacker: charMap[p.attacker_character_id],
-          attackerClass: loadoutMap[p.attacker_loadout_id].class,
-          attackerFaction: factionMap[p.attacker_team_id],
-          attackerVehicle: vehicleMap[p.attacker_vehicle_id],
-          attackerWeaponId: p.attacker_weapon_id,
-          attackerWeapon: itemMap[p.attacker_weapon_id],
-          characterId: p.character_id,
-          character: charMap[p.character_id],
-          class: loadoutMap[p.character_loadout_id].class,
-          faction: factionMap[p.team_id],
-          vehicle: vehicleMap[p.vehicle_id],
-          isHeadshot: parseInt(p.is_headshot),
-          continent: zoneMap[p.zone_id],
-          server: worldMap[p.world_id]
-        }
-        
-        // if either one of the ids is missing from the charMap, fetch it and update the map
-        if (!(deathEvent.attackerId in charMap)) {
-          fetchCharAndUpdateMap(deathEvent, 'attackerId', 'attacker', dbApi.logDeathEvent);
-        } else if (!(deathEvent.characterId in charMap)) {
-          fetchCharAndUpdateMap(deathEvent, 'characterId', 'character', dbApi.logDeathEvent);
-        } else {
+        (async () => {
+          const deathEvent = {
+            timestamp: parseInt(p.timestamp),
+            attackerId: p.attacker_character_id,
+            attacker: await fetchIfMissing(p.attacker_character_id),
+            attackerClass: loadoutMap[p.attacker_loadout_id].class,
+            attackerFaction: factionMap[p.attacker_team_id],
+            attackerVehicle: vehicleMap[p.attacker_vehicle_id],
+            attackerWeaponId: p.attacker_weapon_id,
+            attackerWeapon: itemMap[p.attacker_weapon_id],
+            characterId: p.character_id,
+            character: await fetchIfMissing(p.character_id),
+            class: loadoutMap[p.character_loadout_id].class,
+            faction: factionMap[p.team_id],
+            vehicle: vehicleMap[p.vehicle_id],
+            isHeadshot: parseInt(p.is_headshot),
+            continent: zoneMap[p.zone_id],
+            server: worldMap[p.world_id]
+          }
+          console.log(JSON.stringify(deathEvent));
           dbApi.logDeathEvent.run(deathEvent);
-          console.log(`${deathEvent.attacker} ${deathEvent.character} both present already`);
-          //console.log(`${deathEvent.attacker} and ${deathEvent.character} both present`);
-        }
-      } 
+        })();
+      }
       else if (p.event_name === 'VehicleDestroy') {
-        const vehicleDestroyEvent = {
+        (async () => {
+          const vehicleDestroyEvent = {
+            timestamp: parseInt(p.timestamp),
+            attackerId: p.attacker_character_id,
+            attacker: await fetchIfMissing(p.attacker_character_id),
+            attackerClass: (p.attacker_loadout_id in loadoutMap) ? loadoutMap[p.attacker_loadout_id].class : null,
+            attackerFaction: (p.attacker_loadout_id in loadoutMap) ? factionMap[loadoutMap[p.attacker_loadout_id].factionId] : null,
+            attackerVehicle: vehicleMap[p.attacker_vehicle_id],
+            attackerWeaponId: p.attacker_weapon_id,
+            attackerWeapon: itemMap[p.attacker_weapon_id],
+            characterId: p.character_id,
+            character: await fetchIfMissing(p.character_id),
+            faction: factionMap[p.faction_id],
+            vehicle: vehicleMap[p.vehicle_id],
+            facility: regionMap[p.facility_id],
+            continent: zoneMap[p.zone_id],
+            server: worldMap[p.world_id]
+          }
+          console.log(JSON.stringify(vehicleDestroyEvent));
+          dbApi.logVehicleDestroyEvent.run(vehicleDestroyEvent);
+        })();
+      }
+      else if (p.event_name === 'GainExperience') {
+        (async () => {
+          const experienceEvent = {
+            timestamp: parseInt(p.timestamp),
+            characterId: p.character_id,
+            character: await fetchIfMissing(p.character_id),
+            class: loadoutMap[p.loadout_id].class,
+            faction: factionMap[loadoutMap[p.loadout_id].factionId],
+            otherId: p.other_id,
+            other: await fetchIfMissing(p.other_id),
+            experienceId: p.experience_id,
+            description: experienceMap[p.experience_id].desc, 
+            amount: p.amount,
+            continent: zoneMap[p.zone_id],
+            server: worldMap[p.world_id]
+          }
+          console.log(JSON.stringify(experienceEvent));
+          dbApi.logExperienceEvent.run(experienceEvent);
+        })();
+      }
+      else if (p.event_name === 'PlayerFacilityCapture' || p.event_name === 'PlayerFacilityDefend') {
+        const playerFacilityEvent = {
           timestamp: parseInt(p.timestamp),
-          attackerId: p.attacker_character_id,
-          attacker: charMap[p.attacker_character_id],
-          attackerClass: (p.attacker_loadout_id in loadoutMap) ? loadoutMap[p.attacker_loadout_id].class : null,
-          attackerFaction: (p.attacker_loadout_id in loadoutMap) ? factionMap[loadoutMap[p.attacker_loadout_id].factionId] : null,
-          attackerVehicle: vehicleMap[p.attacker_vehicle_id],
-          attackerWeaponId: p.attacker_weapon_id,
-          attackerWeapon: itemMap[p.attacker_weapon_id],
           characterId: p.character_id,
           character: charMap[p.character_id],
-          faction: factionMap[p.faction_id],
-          vehicle: vehicleMap[p.vehicle_id],
+          type: p.event_name,
           facility: regionMap[p.facility_id],
           continent: zoneMap[p.zone_id],
           server: worldMap[p.world_id]
         }
-        
-        if (!(vehicleDestroyEvent.attackerId in charMap)) {
-          fetchCharAndUpdateMap(vehicleDestroyEvent, 'attackerId', 'attacker', dbApi.logVehicleDestroyEvent);
-        } else if (!(vehicleDestroyEvent.characterId in charMap)) {
-          fetchCharAndUpdateMap(vehicleDestroyEvent, 'characterId', 'character', dbApi.logVehicleDestroyEvent);
-        } else {
-          dbApi.logVehicleDestroyEvent.run(vehicleDestroyEvent);
-          console.log(`${vehicleDestroyEvent.attacker} ${vehicleDestroyEvent.character} both present already`);
-        }
-        
-      }
-      else if (p.event_name === 'GainExperience') {
-        const experienceEvent = {
-          timestamp: parseInt(p.timestamp),
-          characterId: p.character_id,
-          character: charMap[p.character_id],
-          class: loadoutMap[p.loadout_id].class,
-          faction: factionMap[loadoutMap[p.loadout_id].factionId],
-          otherId: p.other_id,
-          other: charMap[p.other_id],
-          experienceId: p.experience_id,
-          description: experienceMap[p.experience_id].desc, 
-          amount: p.amount,
-          continent: zoneMap[p.zone_id],
-          server: worldMap[p.world_id]
-        }
-
-        // if either one of the ids is missing from the charMap, fetch it and update the map
-        if (!(experienceEvent.characterId in charMap)) {
-          fetchCharAndUpdateMap(experienceEvent, 'characterId', 'character', dbApi.logExperienceEvent);
-        } else if (!(experienceEvent.otherId in charMap) && experienceEvent.otherId % 2 === 1) { // only try fetching for player (odd) ids, not npc ids
-          fetchCharAndUpdateMap(experienceEvent, 'otherId', 'other', dbApi.logExperienceEvent);
-        } else {
-          dbApi.logExperienceEvent.run(experienceEvent);
-          console.log(`${experienceEvent.character} ${experienceEvent.other} both present already`);
-        }
+        if (!(p.character_id in charMap)) console.log('CHAR NOT IN MAP', p.character_id);
+        console.log(p.event_name, playerFacilityEvent);
+        dbApi.logPlayerFacilityEvent.run(playerFacilityEvent);
       }
     }
   });
@@ -358,4 +358,4 @@ async function main() {
   });
 }
 
-main();
+asyncMain();
