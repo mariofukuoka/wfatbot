@@ -201,11 +201,11 @@ async function getItemMap() {
  * @returns {{regionId: String}}
  */
 async function getRegionMap() {
-  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/region/?&c:limit=${limit}`
+  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/map_region/?&c:limit=${limit}`
   const response = await axios.get(url);
-  const regionMap = response.data.region_list.reduce( (map, currRegion) => {
+  const regionMap = response.data.map_region_list.reduce( (map, currRegion) => {
     try {
-      map[currRegion.region_id] = currRegion.name.en;
+      map[currRegion.facility_id] = currRegion.facility_name;
     } catch(e) {
       //console.log(`region ${currRegion.region_id} has an undefined name`);
     }
