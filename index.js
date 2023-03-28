@@ -19,12 +19,12 @@ const dbApi = require('./database-api');
 
 // ============================== Config ===========================
 
-var trackedPlayers = ['kurohagane', 'lukas1233', 'yippys'];
-
 var outputFilename = 'output_report.html'
 
-// ============================= Variables =========================
+// ============================= Variables =======================
+
 async function asyncMain() {
+  // Census API calls
   const censusPromises = [
     census.getCharacterMap(await census.getMemberNames('hhzs')),
     census.getFactionMap(),
@@ -53,21 +53,20 @@ async function asyncMain() {
     skillMap
   ] = await Promise.all(censusPromises);
   console.log('Census: promises resolved!');
-  const trackedIds = Object.keys(charMap);
+  const trackedIds = new Set(Object.keys(charMap));
   //console.log(charMap);
 
-  var eventHistory = [];
-  var uniqueChars = new Set();
+  // Discord client
+  const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-
-  // Create a new WebSocket connection to the Daybreak API websocket endpoint
+  // Websocket
   const ws = new WebSocket(`wss://push.planetside2.com/streaming?environment=ps2&service-id=s:${serviceId}`);
 
-  // subscribe to outfit member events
+  // Websocket subscription JSON
   subJSON = {
     service: 'event',
     action: 'subscribe',
-    characters: trackedIds,
+    characters: Array.from(trackedIds),
     worlds: ['all'],
     eventNames: [      
       ...trackedExperienceEvents,
@@ -83,26 +82,33 @@ async function asyncMain() {
     logicalAndCharactersWithWorlds:true
   }
 
-
+  var eventHistory = [];
+  var uniqueChars = new Set();
   // ============================= Functions ==============================
 
-  /* 
-  fetchIfMissing either returns the character name if it's already in charMap, or if not, 
-  asynchronously fetches it from the census API and then caches is it in charMap (or returns null if invalid id)*/
+  function charIdIsValid(characterId) {
+    // valid character ids are odd, npc ids are even
+    return characterId.slice(-1) % 2 === 1;
+  }
+
+
   async function fetchIfMissing (characterId) {
-    if (characterId in charMap) { // if char already in charMap, just return that
-      console.log('present:', charMap[characterId]);
+    if (!charIdIsValid(characterId)) return null;
+    else if (characterId in charMap) {
+      //console.log('present:', charMap[characterId]);
       return charMap[characterId];
-    } else if (characterId.slice(-1) % 2 === 0) { // if char's id is invalid (valid chars have odd ids), return null
-      console.log('invalid:', characterId);
-      return null;
-    } else { // else retrieve it form the census API
-      const fetchedCharacter = await census.getCharacter(characterId);
-      if (fetchedCharacter != null) {
-        charMap[characterId] = fetchedCharacter;
+    } 
+    else { // attempt to fetch from census API
+      try {
+        newChar = await census.getCharacter(characterId);
+        if (newChar != null) charMap[characterId] = newChar; // cache new char
+        //console.log('fetched:', fetchedCharacter);
+        return newChar;
+      } 
+      catch (e) {
+        console.log('character retrieval error:', e)
+        return null;
       }
-      console.log('fetched:', fetchedCharacter);
-      return fetchedCharacter;
     }
   }
 
@@ -206,9 +212,8 @@ async function asyncMain() {
   // =================================== MAIN EXECUTION ===================
 
 
-  // ================================== DISCORD =====================================
+  // ================================== DISCORD LISTENERS =====================================
   // Create a new client instance
-  const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
   // When the client is ready, run this code (only once)
   // We use 'c' for the event parameter to keep it separate from the already defined 'client'
@@ -235,7 +240,10 @@ async function asyncMain() {
       //console.log(eventHistoryStr)
       //createReport(eventHistory, uniqueChars);
       //await interaction.reply({ files: [outputFilename]})
-      console.log(dbApi.db.prepare('SELECT * FROM experienceEvents').all());
+      console.log(dbApi.db.prepare('SELECT * FROM playerFacilityEvents').all());
+      console.log(dbApi.db.prepare('SELECT * FROM skillAddedEvents').all());
+      console.log(dbApi.db.prepare('SELECT * FROM itemAddedEvents').all());
+      console.log(dbApi.db.prepare('SELECT * FROM playerSessionEvents').all());
     }
   });
   
@@ -254,18 +262,15 @@ async function asyncMain() {
   // Listen for incoming messages from the websocket
   ws.on('message', message => {
     const data = JSON.parse(message);
-    // Check if the message is a player login event
-    if (data.type === 'serviceMessage') { // && data.payload.event_name === 'PlayerLogin') {
+    if (data.type === 'serviceMessage') {
       const p = data.payload;
-      //let entry = {timestamp: p.timestamp, eventName: p.event_name, char: p.character_id};
-      //eventHistory.push(p);
 
       if ('attacker_character_id' in p && p.attacker_character_id === '0') { // filter out tutorial events
         //console.log('Event from tutorial zone', p);
         return;
       }
 
-      console.log(p.event_name);
+      //console.log(p.event_name);
 
       if (p.event_name === 'Death') {
         (async () => {
@@ -287,7 +292,7 @@ async function asyncMain() {
             continent: zoneMap[p.zone_id],
             server: worldMap[p.world_id]
           }
-          console.log(JSON.stringify(deathEvent));
+          //console.log(p.event_name, JSON.stringify(deathEvent));
           dbApi.logDeathEvent.run(deathEvent);
         })();
       }
@@ -306,11 +311,12 @@ async function asyncMain() {
             character: await fetchIfMissing(p.character_id),
             faction: factionMap[p.faction_id],
             vehicle: vehicleMap[p.vehicle_id],
+            facilityId: p.facility_id,
             facility: regionMap[p.facility_id],
             continent: zoneMap[p.zone_id],
             server: worldMap[p.world_id]
           }
-          console.log(JSON.stringify(vehicleDestroyEvent));
+          console.log(p.event_name, vehicleDestroyEvent);
           dbApi.logVehicleDestroyEvent.run(vehicleDestroyEvent);
         })();
       }
@@ -330,7 +336,7 @@ async function asyncMain() {
             continent: zoneMap[p.zone_id],
             server: worldMap[p.world_id]
           }
-          console.log(JSON.stringify(experienceEvent));
+          //console.log(p.event_name, JSON.stringify(experienceEvent));
           dbApi.logExperienceEvent.run(experienceEvent);
         })();
       }
@@ -340,6 +346,7 @@ async function asyncMain() {
           characterId: p.character_id,
           character: charMap[p.character_id],
           type: p.event_name,
+          facilityId: p.facility_id,
           facility: regionMap[p.facility_id],
           continent: zoneMap[p.zone_id],
           server: worldMap[p.world_id]
@@ -347,6 +354,45 @@ async function asyncMain() {
         if (!(p.character_id in charMap)) console.log('CHAR NOT IN MAP', p.character_id);
         console.log(p.event_name, playerFacilityEvent);
         dbApi.logPlayerFacilityEvent.run(playerFacilityEvent);
+      }
+      else if (p.event_name === 'SkillAdded') {
+        const skillAddedEvent = {
+          timestamp: parseInt(p.timestamp),
+          characterId: p.character_id,
+          character: charMap[p.character_id],
+          skillId: p.skill_id,
+          skill: skillMap[p.skill_id],
+          continent: zoneMap[p.zone_id],
+          server: worldMap[p.world_id]
+        }
+        console.log(p.event_name, skillAddedEvent)
+        dbApi.logSkillAddedEvent.run(skillAddedEvent);
+      }
+      else if (p.event_name === 'ItemAdded') {
+        const itemAddedEvent = {
+          timestamp: parseInt(p.timestamp),
+          characterId: p.character_id,
+          character: charMap[p.character_id],
+          itemId: p.item_id,
+          item: itemMap[p.item_id],
+          itemCount: p.item_count,
+          context: p.context,
+          continent: zoneMap[p.zone_id],
+          server: worldMap[p.world_id]
+        }
+        console.log(p.event_name, itemAddedEvent)
+        dbApi.logItemAddedEvent.run(itemAddedEvent);
+      }
+      else if (p.event_name === 'PlayerLogin' || p.event_name === 'PlayerLogout' && p.character_id in trackedIds) {
+        const playerSessionEvent = {
+          timestamp: p.timestamp,
+          characterId: p.character_id,
+          character: charMap[p.character_id],
+          type: p.event_name,
+          server: worldMap[p.world_id]
+        }
+        console.log(p.event_name, playerSessionEvent)
+        dbApi.logPlayerSessionEvent.run(playerSessionEvent);
       }
     }
   });
