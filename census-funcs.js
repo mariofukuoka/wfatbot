@@ -24,15 +24,28 @@ async function getCharacter(charId) {
 
 async function getCharacterMap(charNames) {
     // map names onto promises of requests for corresponding ids
-    const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/character_name?name.first_lower=${charNames}&c:limit=${limit}`;
+    let promises = [];
+    const urlCharLimit = 2000 - 200;
+    let namesBuffer = [];
+    let currNameIdx = 0;
 
-    //console.log(url);
-    // resolve promises to responses
-    const response = await axios.get(url);
-  
+    // get a list of requests asking for batches of game characters, such that each request's url string stays under the character limit
+    while (currNameIdx < charNames.length) {
+      while (`${namesBuffer + charNames[currNameIdx]}`.length < urlCharLimit) {
+        if (currNameIdx >= charNames.length) break;
+        namesBuffer.push(charNames[currNameIdx].toLowerCase());
+        currNameIdx += 1;
+      }
+      const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/character_name?name.first_lower=${namesBuffer}&c:limit=${limit}`;
+      promises.push(axios.get(url));
+      namesBuffer = [];
+    }
+    const responses = await Promise.all(promises);
     let charMap = {};
-    response.data.character_name_list.forEach(char => {
-      charMap[char.character_id] = char.name.first;
+    responses.forEach(response => {
+      response.data.character_name_list.forEach(char => {
+        charMap[char.character_id] = char.name.first;
+      })
     });
     return charMap;
 }
@@ -121,34 +134,45 @@ async function getVehicleMap() {
 
 /**
  * returns a map of weapon item ids to their names
- * @returns {{itemId: String}}
  */
-async function getItemMap() {
+const getItemMap = async () => {
   const countUrl = `https://census.daybreakgames.com/s:${serviceId}/count/ps2:v2/item/`
   const countResponse = await axios.get(countUrl);
   const itemCount = countResponse.data.count;
-  let promises = [];
+  const promises = [];
   for (let start = 0; start < itemCount; start += limit) {
-    const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/item/?c:start=${start}&c:limit=${limit}`
-    promises.push(axios.get(url));
+      const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2/`
+      + `item?c:start=${start}&c:limit=${limit}&c:lang=en`
+      + `&c:show=item_id,item_type_id,item_category_id,name,faction_id,skill_set_id`
+      + `&c:join=item_type^inject_at:type^show:name`
+      + `&c:join=item_category^inject_at:category^show:name`
+      + `&c:join=skill_set^inject_at:skill_set^show:name`
+      + `&c:join=faction^inject_at:faction^show:code_tag`
+      + `&c:join=item_profile^inject_at:item_profile^list:1`
+        + `(profile^inject_at:profile^show:profile_type_description)`
+      + `&c:join=item_attachment^on:item_id^to:attachment_item_id^inject_at:parent_items^list:1`
+      promises.push(axios.get(url));
   }
-  console.log(promises.length);
   const responses = await Promise.all(promises);
-  /* const itemList = [];
-  responses.forEach(res => {itemList.concat(res.data.item_list)}) */
   const itemMap = {};
-  responses.forEach(res => {
-    partialMap = res.data.item_list.reduce( (map, currItem) => {
+  responses.forEach(response => {
+    response.data.item_list.forEach(item => {
       try {
-        map[currItem.item_id] = currItem.name.en;
+        itemMap[item.item_id] = {
+          name: ('name' in item) ? item.name.en : null,
+          type: ('type' in item) ? item.type.name : null,
+          category: ('category' in item) ? item.category.name.en : null,
+          skillSet: ('skill_set' in item) ? item.skill_set.name.en : null,
+          faction: ('faction' in item) ? item.faction.code_tag : null,
+          classes: ('item_profile' in item) ? [...new Set(item.item_profile.map(obj => obj.profile.profile_type_description))] : [],
+          parentItems: ('parent_items' in item) ? [...new Set(item.parent_items.map(obj => obj.item_id))] : []
+        }
       } catch(e) {
-        //console.log(`item ${currItem.item_id} has an undefined name`);
+          console.log(`item ${item.item_id} err: ${e}`);
+          console.log(item);
       }
-      return map;
-    }, {});
-    Object.assign(itemMap, partialMap);
+    })
   });
-  console.log(Object.keys(itemMap).length);
   return itemMap;
 }
 
@@ -213,22 +237,35 @@ async function getWorldMap() {
  * @returns {{skillId: String}}
  */
 async function getSkillMap() {
-  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/skill/?&c:limit=${limit}`
-  const response = await axios.get(url);
-  const skillMap = response.data.skill_list.reduce( (map, currSkill) => {
-    try {
-      map[currSkill.skill_id] = currSkill.name.en;
-    } catch(e) {
-      //console.log(`skill ${currSkill.skill_id} has an undefined name`);
-    }
-    return map;
-  }, {});
+  const countUrl = `https://census.daybreakgames.com/s:${serviceId}/count/ps2:v2/skill/`
+  const countResponse = await axios.get(countUrl);
+  const skillCount = countResponse.data.count;
+  const promises = [];
+  for (let start = 0; start < skillCount; start += limit) {
+    const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/skill`
+    + `?c:start=${start}&c:limit=${limit}`
+    + `&c:lang=en&c:show=skill_id,skill_line_id,skill_line_index,skill_points,grant_item_id,name`
+    + `&c:join=skill_line^inject_at:skill_line^show:skill_line_id%27name%27skill_points`
+    promises.push(axios.get(url));
+  }
+  const responses = await Promise.all(promises);
+  const skillMap = {};
+  responses.forEach( response => {
+    response.data.skill_list.forEach( skill => {
+      skillMap[skill.skill_id] = {
+        name: (skill.name?.en || null),
+        skillLine: (skill.skill_line?.name?.en || null),
+        skillPoints: (skill.skill_points || null),
+        grantItemId: (skill.grant_item_id || null)
+      }
+    })
+  });
   return skillMap;
 }
 
-(async () => {
-  await getCharacterMap(await getMemberNames('vcbc'));
-})(); 
+/* (async () => {
+  await getSkillMap();
+})();  */
 
 
 // set exports to allow main file to access funcs
