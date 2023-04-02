@@ -5,6 +5,7 @@ const { JSDOM } = require('jsdom');
 const census = require('./census-funcs')
 const { token, serviceId } = require('./config.json');
 const fs = require('fs');
+const itemMap = require('./item-map.json');
 const trackedExperienceEvents = require('./tracked-experience-events.json');
 const dbApi = require('./database-api');
 
@@ -26,13 +27,12 @@ var outputFilename = 'output_report.html'
 async function asyncMain() {
   // Census API calls
   const censusPromises = [
-    census.getCharacterMap(await census.getMemberNames('hhzs')),
+    census.getCharacterMap(await census.getMemberNames('vcbc')),
+    //census.getCharacterMap(['nmaxlukas1233nc', '1rpcxnerotr']),
     census.getFactionMap(),
     census.getLoadoutMap(),
-    census.getWeaponMap(),
     census.getVehicleMap(),
     census.getExperienceMap(),
-    census.getItemMap(),
     census.getZoneMap(),
     census.getRegionMap(),
     census.getWorldMap(),
@@ -43,10 +43,8 @@ async function asyncMain() {
     charMap,
     factionMap,
     loadoutMap,
-    weaponMap,
     vehicleMap,
     experienceMap,
-    itemMap,
     zoneMap,
     regionMap,
     worldMap,
@@ -54,7 +52,7 @@ async function asyncMain() {
   ] = await Promise.all(censusPromises);
   console.log('Census: promises resolved!');
   const trackedIds = new Set(Object.keys(charMap));
-  //console.log(charMap);
+  console.log(charMap);
 
   // Discord client
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -69,15 +67,16 @@ async function asyncMain() {
     characters: Array.from(trackedIds),
     worlds: ['all'],
     eventNames: [      
-      ...trackedExperienceEvents,
+      //...trackedExperienceEvents,
+      'GainExperience',
       'Death', 
       'VehicleDestroy', 
       'PlayerFacilityCapture',
       'PlayerFacilityDefend',
       'ItemAdded',
       'SkillAdded',
-      //'PlayerLogin',
-      //'PlayerLogout'
+      'PlayerLogin',
+      'PlayerLogout'
     ], //'PlayerLogin', 'PlayerLogout'],
     logicalAndCharactersWithWorlds:true
   }
@@ -86,11 +85,59 @@ async function asyncMain() {
   var uniqueChars = new Set();
   // ============================= Functions ==============================
 
+  function getEventMsg(eventName, event) {
+    let msg = `${timestampToDate(event.timestamp)} [${eventName}] `;
+    msg += ' '.repeat('PlayerFacilityCapture'.length - eventName.length);
+    if (eventName === 'Death') {
+      msg += `${event.attacker} (${event.attackerFaction} ${event.attackerClass}`;
+      if (event.attackerVehicle) msg += ` in ${event.attackerVehicle}`;
+      msg += `) killed ${event.character} (${event.faction} ${event.class}`;
+      if (event.vehicle) msg += ` in ${event.vehicle}`;
+      msg += `) with ${event.attackerWeapon}`;
+      if (event.headshot) msg += ' (headshot)';
+      msg += ` [${event.continent}]`;
+    } 
+    else if (eventName === 'GainExperience') {
+      msg += `${event.character} (${event.faction} ${event.class}) got ${event.amount}XP for ${event.description}`
+      if (event.other) msg += ` through ${event.other}`;
+      msg += ` [${event.continent}]`;
+    } 
+    else if (eventName === 'VehicleDestroy') {
+      msg += `${event.attacker} (${event.attackerFaction} ${event.attackerClass}`;
+      if (event.attackerVehicle) msg += ` in ${event.attackerVehicle}`;
+      msg += `) destroyed ${event.character}'s ${event.vehicle} (${event.faction}) with ${event.attackerWeapon} [${event.continent}]`;
+    } 
+    else if (eventName === 'PlayerFacilityCapture') {
+      msg +=  `${event.character} captured ${event.facility} [${event.continent}]`;
+    }
+    else if (eventName === 'PlayerFacilityDefend') {
+      msg += `${event.character} defended ${event.facility} [${event.continent}]`;
+    } 
+    else if (eventName === 'SkillAdded') {
+      msg += `${event.character} unlocked`
+      if (event.skill) msg += ` ${event.skill}`; else msg += ` unknown skill (${event.skillId})`;
+      msg += ` [${event.continent}]`;
+    } 
+    else if (eventName === 'ItemAdded') {
+      msg += `${event.character} unlocked`
+      if (event.itemCount) msg += ` ${event.itemCount}`;
+      if (event.name) msg += ` ${event.name} (${event.type}, ${event.category})`; else msg += ` unknown item (${event.itemId})`;
+      if (event.context) msg += ` (context: ${event.context})`;
+      msg += ` [${event.continent}]`;
+    } 
+    else if (eventName === 'PlayerLogin') {
+      msg += `${event.character} logged in`;
+    } else if (eventName === 'PlayerLogout') {
+      msg += `${event.character} logged out`;
+    } else return 'unknown event';
+    msg += ` [${event.server}]`
+    return msg;
+  }
+
   function charIdIsValid(characterId) {
     // valid character ids are odd, npc ids are even
     return characterId.slice(-1) % 2 === 1;
   }
-
 
   async function fetchIfMissing (characterId) {
     if (!charIdIsValid(characterId)) return null;
@@ -106,7 +153,7 @@ async function asyncMain() {
         return newChar;
       } 
       catch (e) {
-        console.log('character retrieval error:', e)
+        console.log('character retrieval error:', characterId)
         return null;
       }
     }
@@ -271,128 +318,141 @@ async function asyncMain() {
       }
 
       //console.log(p.event_name);
-
-      if (p.event_name === 'Death') {
-        (async () => {
-          const deathEvent = {
+      try {
+        if (p.event_name === 'Death') {
+          (async () => {
+            const deathEvent = {
+              timestamp: parseInt(p.timestamp),
+              attackerId: p.attacker_character_id,
+              attacker: await fetchIfMissing(p.attacker_character_id),
+              attackerClass: loadoutMap[p.attacker_loadout_id].class,
+              attackerFaction: factionMap[p.attacker_team_id],
+              attackerVehicle: vehicleMap[p.attacker_vehicle_id],
+              attackerWeaponId: p.attacker_weapon_id,
+              attackerWeapon: itemMap[p.attacker_weapon_id].name,
+              characterId: p.character_id,
+              character: await fetchIfMissing(p.character_id),
+              class: loadoutMap[p.character_loadout_id].class,
+              faction: factionMap[p.team_id],
+              vehicle: vehicleMap[p.vehicle_id],
+              isHeadshot: parseInt(p.is_headshot),
+              continent: zoneMap[p.zone_id],
+              server: worldMap[p.world_id]
+            }
+            console.log(getEventMsg(p.event_name, deathEvent));
+            dbApi.saveDeathEvent.run(deathEvent);
+          })();
+        }
+        else if (p.event_name === 'VehicleDestroy') {
+          (async () => {
+            const vehicleDestroyEvent = {
+              timestamp: parseInt(p.timestamp),
+              attackerId: p.attacker_character_id,
+              attacker: await fetchIfMissing(p.attacker_character_id),
+              attackerClass: (p.attacker_loadout_id in loadoutMap) ? loadoutMap[p.attacker_loadout_id].class : null,
+              attackerFaction: (p.attacker_loadout_id in loadoutMap) ? factionMap[loadoutMap[p.attacker_loadout_id].factionId] : null,
+              attackerVehicle: vehicleMap[p.attacker_vehicle_id],
+              attackerWeaponId: p.attacker_weapon_id,
+              attackerWeapon: itemMap[p.attacker_weapon_id].name,
+              characterId: p.character_id,
+              character: await fetchIfMissing(p.character_id),
+              faction: factionMap[p.faction_id],
+              vehicle: vehicleMap[p.vehicle_id],
+              facilityId: p.facility_id,
+              facility: regionMap[p.facility_id],
+              continent: zoneMap[p.zone_id],
+              server: worldMap[p.world_id]
+            }
+            console.log(getEventMsg(p.event_name, vehicleDestroyEvent));
+            dbApi.saveVehicleDestroyEvent.run(vehicleDestroyEvent);
+          })();
+        }
+        else if (p.event_name === 'GainExperience') {
+          (async () => {
+            const experienceEvent = {
+              timestamp: parseInt(p.timestamp),
+              characterId: p.character_id,
+              character: await fetchIfMissing(p.character_id),
+              class: loadoutMap[p.loadout_id].class,
+              faction: factionMap[loadoutMap[p.loadout_id].factionId],
+              otherId: p.other_id,
+              other: await fetchIfMissing(p.other_id),
+              experienceId: p.experience_id,
+              description: experienceMap[p.experience_id].desc, 
+              amount: p.amount,
+              continent: zoneMap[p.zone_id],
+              server: worldMap[p.world_id]
+            }
+            //console.log(p.event_name, experienceEvent);
+            console.log(getEventMsg(p.event_name, experienceEvent));
+            dbApi.saveExperienceEvent.run(experienceEvent);
+          })();
+        }
+        else if (p.event_name === 'PlayerFacilityCapture' || p.event_name === 'PlayerFacilityDefend') {
+          const playerFacilityEvent = {
             timestamp: parseInt(p.timestamp),
-            attackerId: p.attacker_character_id,
-            attacker: await fetchIfMissing(p.attacker_character_id),
-            attackerClass: loadoutMap[p.attacker_loadout_id].class,
-            attackerFaction: factionMap[p.attacker_team_id],
-            attackerVehicle: vehicleMap[p.attacker_vehicle_id],
-            attackerWeaponId: p.attacker_weapon_id,
-            attackerWeapon: itemMap[p.attacker_weapon_id],
             characterId: p.character_id,
-            character: await fetchIfMissing(p.character_id),
-            class: loadoutMap[p.character_loadout_id].class,
-            faction: factionMap[p.team_id],
-            vehicle: vehicleMap[p.vehicle_id],
-            isHeadshot: parseInt(p.is_headshot),
-            continent: zoneMap[p.zone_id],
-            server: worldMap[p.world_id]
-          }
-          //console.log(p.event_name, JSON.stringify(deathEvent));
-          dbApi.logDeathEvent.run(deathEvent);
-        })();
-      }
-      else if (p.event_name === 'VehicleDestroy') {
-        (async () => {
-          const vehicleDestroyEvent = {
-            timestamp: parseInt(p.timestamp),
-            attackerId: p.attacker_character_id,
-            attacker: await fetchIfMissing(p.attacker_character_id),
-            attackerClass: (p.attacker_loadout_id in loadoutMap) ? loadoutMap[p.attacker_loadout_id].class : null,
-            attackerFaction: (p.attacker_loadout_id in loadoutMap) ? factionMap[loadoutMap[p.attacker_loadout_id].factionId] : null,
-            attackerVehicle: vehicleMap[p.attacker_vehicle_id],
-            attackerWeaponId: p.attacker_weapon_id,
-            attackerWeapon: itemMap[p.attacker_weapon_id],
-            characterId: p.character_id,
-            character: await fetchIfMissing(p.character_id),
-            faction: factionMap[p.faction_id],
-            vehicle: vehicleMap[p.vehicle_id],
+            character: charMap[p.character_id],
+            type: p.event_name,
             facilityId: p.facility_id,
             facility: regionMap[p.facility_id],
             continent: zoneMap[p.zone_id],
             server: worldMap[p.world_id]
           }
-          console.log(p.event_name, vehicleDestroyEvent);
-          dbApi.logVehicleDestroyEvent.run(vehicleDestroyEvent);
-        })();
-      }
-      else if (p.event_name === 'GainExperience') {
-        (async () => {
-          const experienceEvent = {
+          console.log(getEventMsg(p.event_name, playerFacilityEvent));
+          dbApi.savePlayerFacilityEvent.run(playerFacilityEvent);
+        }
+        else if (p.event_name === 'SkillAdded') {
+          const skillAddedEvent = {
             timestamp: parseInt(p.timestamp),
             characterId: p.character_id,
-            character: await fetchIfMissing(p.character_id),
-            class: loadoutMap[p.loadout_id].class,
-            faction: factionMap[loadoutMap[p.loadout_id].factionId],
-            otherId: p.other_id,
-            other: await fetchIfMissing(p.other_id),
-            experienceId: p.experience_id,
-            description: experienceMap[p.experience_id].desc, 
-            amount: p.amount,
+            character: charMap[p.character_id],
+            skillId: p.skill_id,
+            skill: skillMap[p.skill_id],
             continent: zoneMap[p.zone_id],
             server: worldMap[p.world_id]
           }
-          //console.log(p.event_name, JSON.stringify(experienceEvent));
-          dbApi.logExperienceEvent.run(experienceEvent);
-        })();
-      }
-      else if (p.event_name === 'PlayerFacilityCapture' || p.event_name === 'PlayerFacilityDefend') {
-        const playerFacilityEvent = {
-          timestamp: parseInt(p.timestamp),
-          characterId: p.character_id,
-          character: charMap[p.character_id],
-          type: p.event_name,
-          facilityId: p.facility_id,
-          facility: regionMap[p.facility_id],
-          continent: zoneMap[p.zone_id],
-          server: worldMap[p.world_id]
+          console.log(getEventMsg(p.event_name, skillAddedEvent));
+          dbApi.saveSkillAddedEvent.run(skillAddedEvent);
         }
-        if (!(p.character_id in charMap)) console.log('CHAR NOT IN MAP', p.character_id);
-        console.log(p.event_name, playerFacilityEvent);
-        dbApi.logPlayerFacilityEvent.run(playerFacilityEvent);
-      }
-      else if (p.event_name === 'SkillAdded') {
-        const skillAddedEvent = {
-          timestamp: parseInt(p.timestamp),
-          characterId: p.character_id,
-          character: charMap[p.character_id],
-          skillId: p.skill_id,
-          skill: skillMap[p.skill_id],
-          continent: zoneMap[p.zone_id],
-          server: worldMap[p.world_id]
+        else if (p.event_name === 'ItemAdded') {
+          const item = itemMap[p.item_id];
+          const itemAddedEvent = {
+            timestamp: parseInt(p.timestamp),
+            characterId: p.character_id,
+            character: charMap[p.character_id],
+            itemId: p.item_id,
+            name: item.name,
+            type: item.type,
+            category: item.category,
+            skillSet: item.skillSet,
+            itemCount: p.item_count,
+            context: p.context,
+            continent: zoneMap[p.zone_id],
+            server: worldMap[p.world_id]
+          }
+
+          console.log(getEventMsg(p.event_name, itemAddedEvent));
+          if (item != null && item.parentItems.length > 0) {
+            console.log(`Attachment for: ${item.parentItems.map(id => console.log(itemMap[id].name))}`);
+          }
+          
+          dbApi.saveItemAddedEvent.run(itemAddedEvent);
         }
-        console.log(p.event_name, skillAddedEvent)
-        dbApi.logSkillAddedEvent.run(skillAddedEvent);
-      }
-      else if (p.event_name === 'ItemAdded') {
-        const itemAddedEvent = {
-          timestamp: parseInt(p.timestamp),
-          characterId: p.character_id,
-          character: charMap[p.character_id],
-          itemId: p.item_id,
-          item: itemMap[p.item_id],
-          itemCount: p.item_count,
-          context: p.context,
-          continent: zoneMap[p.zone_id],
-          server: worldMap[p.world_id]
+        else if ((p.event_name === 'PlayerLogin' || p.event_name === 'PlayerLogout') && p.character_id in trackedIds) {
+          const playerSessionEvent = {
+            timestamp: p.timestamp,
+            characterId: p.character_id,
+            character: charMap[p.character_id],
+            type: p.event_name,
+            server: worldMap[p.world_id]
+          }
+          console.log(getEventMsg(p.event_name, playerSessionEvent));
+          dbApi.savePlayerSessionEvent.run(playerSessionEvent);
         }
-        console.log(p.event_name, itemAddedEvent)
-        dbApi.logItemAddedEvent.run(itemAddedEvent);
-      }
-      else if (p.event_name === 'PlayerLogin' || p.event_name === 'PlayerLogout' && p.character_id in trackedIds) {
-        const playerSessionEvent = {
-          timestamp: p.timestamp,
-          characterId: p.character_id,
-          character: charMap[p.character_id],
-          type: p.event_name,
-          server: worldMap[p.world_id]
-        }
-        console.log(p.event_name, playerSessionEvent)
-        dbApi.logPlayerSessionEvent.run(playerSessionEvent);
+      } catch (e) {
+        console.log('error:', e);
+        console.log(p)
       }
     }
   });

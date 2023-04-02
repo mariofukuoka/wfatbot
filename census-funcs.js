@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { serviceId } = require('./config.json');
-const limit = 10000;
+const limit = 5000;
 
 function mapTwoArrays(keys, values) {
     map = keys.reduce( (accumulated, currKey, currIndex) => {
@@ -24,24 +24,17 @@ async function getCharacter(charId) {
 
 async function getCharacterMap(charNames) {
     // map names onto promises of requests for corresponding ids
-    const promises = charNames.map(name => {
-        const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/character/?name.first_lower=${name.toLowerCase()}&c:show=character_id`;
-        return axios.get(url);
-    });
-  
+    const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/character_name?name.first_lower=${charNames}&c:limit=${limit}`;
+
+    //console.log(url);
     // resolve promises to responses
-    const responses = await Promise.all(promises);
+    const response = await axios.get(url);
   
-    // map responses onto ids
-    let charIds = responses.map(response => {
-        const data = response.data;
-        if (data.character_list.length > 0) {
-            return data.character_list[0].character_id;
-        } else {
-            return null;
-        }
+    let charMap = {};
+    response.data.character_name_list.forEach(char => {
+      charMap[char.character_id] = char.name.first;
     });
-    return mapTwoArrays(charIds, charNames);
+    return charMap;
 }
 
 async function getMemberNames(outfitTag) {
@@ -71,40 +64,7 @@ async function getExperienceMap() {
     return map;
 }
 
-
-/**
- * @returns {{weaponId: {name:string, factionId:string}}}
- */
-async function getWeaponMap() {
-    const url1 = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/item_to_weapon?c:limit=${limit}`;
-    const url2 = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/item?c:limit=${limit}`;
-    const promises = [axios.get(url1), axios.get(url2)];
-    const responses = await Promise.all(promises);
-
-    const itemToWeapMap = responses[0].data.item_to_weapon_list.reduce( (map, currEntry) => {
-        map[currEntry.item_id] = currEntry.weapon_id;
-        return map;
-    }, {});
-    //console.log(Object.keys(itemToWeapMap).length);
-    //console.log(itemToWeapMap);
-
-    const weaponMap = responses[1].data.item_list.reduce( (map, currItem) => {
-        if(currItem.item_id in itemToWeapMap && currItem.name != undefined) {
-            let currWeapon = itemToWeapMap[currItem.item_id];
-            if(currWeapon in map) {
-                //console.log(`weapon_id ${currWeapon} already in map, old item_id: ${map[currWeapon].item_id}, new item_id: ${currItem.item_id}`);
-                // if multiple items are assigned to the same weapon, it means it's a common pool weapon, so set faction to 0 i.e. none
-                map[currWeapon].faction_id = '0';
-            }
-            //let faction_id = ('faction_id' in currItem) ? currItem.faction_id : '0';
-            map[currWeapon] = currItem.name.en; //{name: currItem.name.en, factionId: faction_id}; //, item_id: currItem.item_id};
-        }
-        return map;
-    }, {});
-    return weaponMap;
-}
-
-
+// TODO: use desc instead of name.en, refactor to 1 joined request
 /**
  * returns a map of faction infantry classes to their names
  * @returns {{loadoutId: {class:, factionId:}}}
@@ -126,23 +86,6 @@ async function getLoadoutMap() {
         map[currLoadout.loadout_id] = {class: profileMap[currLoadout.profile_id], factionId: currLoadout.faction_id};
         return map;
     }, {});
-
-    //console.log(loadoutMap);
-    /*
-    // 28 190 4 NSO Infiltrator 
-    loadoutMap['28'] = {class: 'Infiltrator', factionId: '4'};
-    // 29 191 4 NSO Light Assault 
-    loadoutMap['29'] = {class: 'Light Assault', factionId: '4'};
-    // 30 192 4 NSO Medic 
-    loadoutMap['30'] = {class: 'Medic', factionId: '4'};
-    // 31 193 4 NSO Engineer 
-    loadoutMap['31'] = {class: 'Infiltrator', factionId: '4'};
-    // 32 194 4 NSO Heavy Assault 
-    loadoutMap['32'] = {class: 'Heavy Assault', factionId: '4'};
-    // 45 252 4 NSO MAX
-    loadoutMap['45'] = {class: 'MAX', factionId: '4'};
-    */
-    //console.log(loadoutMap);
     return loadoutMap;
 }
 
@@ -181,20 +124,33 @@ async function getVehicleMap() {
  * @returns {{itemId: String}}
  */
 async function getItemMap() {
-  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/item/?item_type_id=26&c:limit=${limit}` // weapon item type id
-  //const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/item/?c:limit=${limit}`
-  const response = await axios.get(url);
-  const itemMap = response.data.item_list.reduce( (map, currItem) => {
-    try {
-      map[currItem.item_id] = currItem.name.en;
-    } catch(e) {
-      //console.log(`item ${currItem.item_id} has an undefined name`);
-    }
-    return map;
-  }, {});
+  const countUrl = `https://census.daybreakgames.com/s:${serviceId}/count/ps2:v2/item/`
+  const countResponse = await axios.get(countUrl);
+  const itemCount = countResponse.data.count;
+  let promises = [];
+  for (let start = 0; start < itemCount; start += limit) {
+    const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/item/?c:start=${start}&c:limit=${limit}`
+    promises.push(axios.get(url));
+  }
+  console.log(promises.length);
+  const responses = await Promise.all(promises);
+  /* const itemList = [];
+  responses.forEach(res => {itemList.concat(res.data.item_list)}) */
+  const itemMap = {};
+  responses.forEach(res => {
+    partialMap = res.data.item_list.reduce( (map, currItem) => {
+      try {
+        map[currItem.item_id] = currItem.name.en;
+      } catch(e) {
+        //console.log(`item ${currItem.item_id} has an undefined name`);
+      }
+      return map;
+    }, {});
+    Object.assign(itemMap, partialMap);
+  });
+  console.log(Object.keys(itemMap).length);
   return itemMap;
 }
-
 
 /**
  * returns a map of region ids to their names
@@ -270,9 +226,9 @@ async function getSkillMap() {
   return skillMap;
 }
 
-/*(async () => {
-    console.log(await getCharacter('5428039961797795393'));
-})(); */
+(async () => {
+  await getCharacterMap(await getMemberNames('vcbc'));
+})(); 
 
 
 // set exports to allow main file to access funcs
@@ -281,7 +237,6 @@ module.exports = {
     getCharacterMap,
     getMemberNames,
     getExperienceMap,
-    getWeaponMap,
     getLoadoutMap,
     getFactionMap,
     getVehicleMap,
