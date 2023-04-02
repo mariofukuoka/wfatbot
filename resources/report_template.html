@@ -55,7 +55,11 @@
                             label: (context) => {
                                 const point = context.raw;
                                 if (point.event == 'Death') {
-                                    return `Kill using ${point.meta}`
+                                    let labelStr = `Kill using ${point.meta}`;
+                                    if (point.vehicle) {
+                                        labelStr += ` (${point.vehicle})`;
+                                    }
+                                    return labelStr;
                                 } else {
                                     return point.meta;
                                 }
@@ -67,8 +71,8 @@
                     xAxisKey: 't',
                     yAxisKey: 'char'
                 },
-                responsive: true,
-                maintainAspectRatio: false  
+                //responsive: true,
+                //maintainAspectRatio: false  
             }
         };
 

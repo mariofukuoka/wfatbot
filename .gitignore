@@ -1,3 +1,5 @@
 node_modules/
 config.json
-output_report.html
+api-maps/
+output/
+player-events.db

@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { serviceId } = require('./config.json');
+const { serviceId } = require('../config.json');
 const limit = 5000;
 
 function mapTwoArrays(keys, values) {
@@ -36,7 +36,9 @@ async function getCharacterMap(charNames) {
         namesBuffer.push(charNames[currNameIdx].toLowerCase());
         currNameIdx += 1;
       }
-      const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/character_name?name.first_lower=${namesBuffer}&c:limit=${limit}`;
+      const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/character_name`
+      + `?name.first_lower=${namesBuffer}&c:limit=${limit}`
+      + `&c:join=characters_online_status^on:character_id^to:character_id^inject_at:characters_online`;
       promises.push(axios.get(url));
       namesBuffer = [];
     }

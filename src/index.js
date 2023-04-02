@@ -3,12 +3,19 @@ const { Client, Events, GatewayIntentBits } = require('discord.js');
 const axios = require('axios');
 const { JSDOM } = require('jsdom');
 const census = require('./census-funcs')
-const { token, serviceId } = require('./config.json');
-const fs = require('fs');
-const itemMap = require('./item-map.json');
-const skillMap = require('./skill-map.json');
-const trackedExperienceEvents = require('./tracked-experience-events.json');
 const dbApi = require('./database-api');
+const { token, serviceId } = require('../config.json');
+const fs = require('fs');
+//const trackedExperienceEvents = require('../resources/tracked-experience-events.json');
+const itemMap = require('../api-maps/item-map.json');
+const skillMap = require('../api-maps/skill-map.json');
+const factionMap = require('../api-maps/faction-map.json');
+const vehicleMap = require('../api-maps/vehicle-map.json');
+const loadoutMap = require('../api-maps/loadout-map.json');
+const experienceMap = require('../api-maps/experience-map.json');
+const zoneMap = require('../api-maps/zone-map.json');
+const regionMap = require('../api-maps/region-map.json');
+const worldMap = require('../api-maps/world-map.json');
 
 // todo: use actual attribute names in the json here, then replace the 
 // key names with "x" and "y" used by chart.js when sending it over
@@ -28,32 +35,7 @@ var outputFilename = 'output_report.html'
 var trackedOutfit = process.argv.slice(2)[0];
 console.log(`tracked outfit: ${trackedOutfit}`);
 async function asyncMain() {
-  
-  const trackedNames = await census.getMemberNames(trackedOutfit);
-  console.log(`tracked name count: ${trackedNames.length}`);
-  // Census API calls
-  const censusPromises = [
-    census.getCharacterMap(trackedNames),
-    //census.getCharacterMap(['nmaxlukas1233nc', '1rpcxnerotr']),
-    census.getFactionMap(),
-    census.getLoadoutMap(),
-    census.getVehicleMap(),
-    census.getExperienceMap(),
-    census.getZoneMap(),
-    census.getRegionMap(),
-    census.getWorldMap()
-  ];
-
-  const [
-    charMap,
-    factionMap,
-    loadoutMap,
-    vehicleMap,
-    experienceMap,
-    zoneMap,
-    regionMap,
-    worldMap
-  ] = await Promise.all(censusPromises);
+  let charMap = await census.getCharacterMap(await census.getMemberNames(trackedOutfit));
   console.log('Census: promises resolved!');
   const trackedIds = new Set(Object.keys(charMap));
   console.log(`tracked id count: ${trackedIds.size}`);
@@ -209,13 +191,6 @@ async function asyncMain() {
     console.log(`Discord: Logged in as ${client.user.tag}!`);
   });
 
-  client.on('message', msg => {
-    console.log(`message: ${msg.content}`)
-    if (msg.content === 'xd') {
-      msg.reply('xD');
-    }
-  });
-
   client.on('interactionCreate', async interaction => {
     if (!interaction.isCommand()) return;
     const { commandName } = interaction;
@@ -292,7 +267,7 @@ async function asyncMain() {
                 attackerFaction: factionMap[p.attacker_team_id],
                 attackerVehicle: vehicleMap[p.attacker_vehicle_id],
                 attackerWeaponId: p.attacker_weapon_id,
-                attackerWeapon: itemMap[p.attacker_weapon_id].name,
+                attackerWeapon: itemMap[p.attacker_weapon_id]?.name,
                 characterId: p.character_id,
                 character: await fetchIfMissing(p.character_id),
                 class: loadoutMap[p.character_loadout_id].class,
@@ -316,7 +291,7 @@ async function asyncMain() {
                 attackerFaction: (p.attacker_loadout_id in loadoutMap) ? factionMap[loadoutMap[p.attacker_loadout_id].factionId] : null,
                 attackerVehicle: vehicleMap[p.attacker_vehicle_id],
                 attackerWeaponId: p.attacker_weapon_id,
-                attackerWeapon: itemMap[p.attacker_weapon_id].name,
+                attackerWeapon: itemMap[p.attacker_weapon_id]?.name,
                 characterId: p.character_id,
                 character: await fetchIfMissing(p.character_id),
                 faction: factionMap[p.faction_id],
