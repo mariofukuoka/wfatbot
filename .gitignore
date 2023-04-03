@@ -1,5 +1,5 @@
 node_modules/
-config.json
 api-maps/
 output/
-player-events.db
+db/
+config/

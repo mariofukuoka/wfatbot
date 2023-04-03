@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { serviceId } = require('../config.json');
+const { serviceId } = require('../config/config.json');
 const limit = 5000;
 
 function mapTwoArrays(keys, values) {

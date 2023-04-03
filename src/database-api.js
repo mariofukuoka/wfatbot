@@ -1,7 +1,9 @@
 const sqlite3 = require('better-sqlite3');
 
 
-var db = sqlite3('../player-events.db');
+
+// todo: parametrize module to define db location when you import it
+var db = sqlite3('../db/player-events.db');
 
 // =====================================  TABLE DEFINITIONS =================================================
 db.exec(`CREATE TABLE IF NOT EXISTS deathEvents (
