@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Session Report</title>
+	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/moment@2.27.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@0.1.1"></script>
+  <style>
+    body {  
+      background: #1D1F20;
+    } 
+  </style>
+</head>
+<body>
+	<div>
+		<canvas id="classesOverTimeChart" height="100px" data=""></canvas>
+    <canvas id="vehiclesOverTimeChart" height="100px" data=""></canvas>
+    <canvas id="interactionsOverTimeChart" height="100px" data=""></canvas>
+	</div>
+
+	<script id="script" >
+    //const yLabels = JSON.parse(document.currentScript.getAttribute('y-labels'));
+    const classesOverTimeData = {
+      datasets: JSON.parse(document.getElementById('classesOverTimeChart').getAttribute('data'))
+    };
+    const vehiclesOverTimeData = {
+      datasets: JSON.parse(document.getElementById('vehiclesOverTimeChart').getAttribute('data'))
+    };
+    const interactionsOverTimeData = {
+      datasets: JSON.parse(document.getElementById('interactionsOverTimeChart').getAttribute('data'))
+    };
+    const options = {
+      //maintainAspectRatio: false,
+      animation: false,
+      scales: {
+        x: {
+          type: 'time',
+          time: {
+            parser: 'YYYY-MM-DD HH:mm:ss',
+            tooltipFormat: 'HH:mm',
+            unit: 'minute',
+            displayFormats: {
+              minute: 'HH:mm'
+            }
+          },
+          title: {
+            display: true,
+            text: 'Time'
+          }
+        },
+        y: {
+          stacked: true,
+          ticks: {
+            precision: 0
+          },
+          title: {
+            display: true,
+            text: 'Count'
+          }
+        }
+      },
+      plugins: {
+        tooltip: {
+          mode: 'index'
+          //position: 'nearest'
+          /* callbacks: {
+              label: (context) => {
+                  const point = context.raw;
+                  if (point.event == 'Death') {
+                      let labelStr = `Kill using ${point.meta}`;
+                      if (point.vehicle) {
+                          labelStr += ` (${point.vehicle})`;
+                      }
+                      return labelStr;
+                  } else {
+                      return point.meta;
+                  }
+              }
+          } */
+        },
+        title: {
+          display: true,
+          text: ''
+        }
+      },
+      /* parsing: {
+        xAxisKey: 'interval',
+        yAxisKey: 'count'
+      }, */
+      //responsive: true,
+      //maintainAspectRatio: false 
+      interaction: {
+        intersect: false
+      } 
+    };
+
+    options.plugins.title.text = 'Classes played over time';
+    var classesOverTimeChart = new Chart(
+      document.getElementById('classesOverTimeChart'),
+      {
+        type: 'line',
+        data: classesOverTimeData,
+        options: options
+      }
+    );
+    
+    options.plugins.title.text = 'Vehicles played over time';
+    var vehiclesOverTimeChart = new Chart(
+      document.getElementById('vehiclesOverTimeChart'),
+      {
+        type: 'line',
+        data: vehiclesOverTimeData,
+        options: options
+      }
+    );
+    
+    options.plugins.title.text = 'Combined arms interactions (kills) over time';
+    var interactionsOverTimeChart = new Chart(
+      document.getElementById('interactionsOverTimeChart'),
+      {
+        type: 'line',
+        data: interactionsOverTimeData,
+        options: options
+      }
+    );
+	</script>
+</body>
+</html>

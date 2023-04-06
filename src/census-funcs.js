@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { generalizeEmpireSpecificName } = require('./helper-funcs');
 const { serviceId } = require('../config/config.json');
 const limit = 5000;
 
@@ -77,6 +78,58 @@ async function getExperienceMap() {
         return acc;
     }, {});
     return map;
+}
+
+function isTrackedVehicle(vehicleName) {
+  return new Set([
+    'Flash',
+    'Harasser',
+    'Lightning',
+    'Magrider',
+    'Prowler',
+    'Vanguard',
+    'Sunderer',
+    'Scythe',
+    'Mosquito',
+    'Reaver',
+    'Valkyrie',
+    'Liberator',
+    'Galaxy'
+  ]).has(vehicleName);
+}
+
+async function getVehicleActivityEvents() {
+  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2/experience?c:limit=${limit}`;
+  const response = await axios.get(url);
+  const map = {};
+  response.data.experience_list.forEach( (event) => {
+    const desc = event.description;
+    let vehicleName = null;
+    let status = null;
+    if ( desc.includes('HIVE') || desc.includes('Protostatus') ) return;
+    if ( desc.startsWith('Vehicle Repair - ') || desc.startsWith('Squad Repair - ') ) {
+      vehicleName = desc.slice(desc.indexOf('-') + 2);
+      status = 'active';
+    } 
+    else if ( desc.includes('Damage') && !desc.includes('Bastion') ) {
+      vehicleName = desc.slice( 0, desc.indexOf('Damage') - 1 );
+      status = 'active';
+    } 
+    else if ( desc.startsWith('Vehicle Destruction - ') ) {
+      vehicleName = desc.slice(desc.indexOf('-') + 2);
+      status = 'destroyed';
+    }
+    else return;
+    if (isTrackedVehicle(vehicleName)) {
+      map[event.experience_id] = {vehicle: generalizeEmpireSpecificName(vehicleName), status: status};
+    }
+    
+  });
+  map['201'] = {vehicle: 'Galaxy', status: 'active'}; // galaxy spawn bonus
+  map['233'] = {vehicle: 'Sunderer', status: 'active'}; // sunderer spawn bonus
+  //map['1988'] = {vehicle: 'ANT', status: 'active'}; // ANT spawn bonus
+  //console.log(map)
+  return map;
 }
 
 // TODO: use desc instead of name.en, refactor to 1 joined request
@@ -266,8 +319,8 @@ async function getSkillMap() {
 }
 
 /* (async () => {
-  await getSkillMap();
-})();  */
+  await getVehicleActivityEvents();
+})(); */
 
 
 // set exports to allow main file to access funcs
@@ -276,6 +329,7 @@ module.exports = {
     getCharacterMap,
     getMemberNames,
     getExperienceMap,
+    getVehicleActivityEvents,
     getLoadoutMap,
     getFactionMap,
     getVehicleMap,

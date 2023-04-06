@@ -9,6 +9,7 @@ async function main() {
     census.getSkillMap(),
     census.getFactionMap(),
     census.getVehicleMap(),
+    census.getVehicleActivityEvents(),
     census.getLoadoutMap(),
     census.getExperienceMap(),
     census.getZoneMap(),
@@ -22,6 +23,7 @@ async function main() {
     'skill-map.json',
     'faction-map.json',
     'vehicle-map.json',
+    'vehicle-activity-events.json',
     'loadout-map.json',
     'experience-map.json',
     'zone-map.json',
@@ -29,7 +31,7 @@ async function main() {
     'world-map.json'
   ]
   for (let i in filenames) {
-    fs.writeFile(`./${folderName}/${filenames[i]}`, JSON.stringify(results[i], null, '\t'), function(err) {
+    fs.writeFile(`../${folderName}/${filenames[i]}`, JSON.stringify(results[i], null, '\t'), function(err) {
       if (err) {
         console.log(err);
       }
