@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Graph Visualization with vis.js</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style type="text/css">
+      #mynetwork {
+          width: 1800px;
+          height: 900px;
+          border: 1px solid lightgray;
+      }
+      body {  
+        background: #1D1F20;
+      } 
+  </style>
+  </head>
+  <body>
+    <div id="mynetwork" nodes="" edges="">
+    </div>
+    <script>
+      /* var nodes = [
+        {id: 1, label: 'Node 1', color:'rgb(255,0,0)'},
+        {id: 2, label: 'Node 2', color:'rgb(255,0,0)'},
+        {id: 3, label: 'Node 3', color:'rgb(255,0,0)'},
+        {id: 4, label: 'Node 4', color:'rgb(0,0,255)'},
+        {id: 5, label: 'Node 5', color:'rgb(0,0,255)'}
+      ]; */
+
+      /* var edges = [
+        {from: 1, to: 2, value: 5},
+        {from: 2, to: 3, value: 2},
+        {from: 3, to: 4, value: 1},
+        {from: 4, to: 5, value: 10},
+        {from: 5, to: 1, value: 20},
+        {from: 1, to: 3, value: 4},
+        {from: 3, to: 5, value: 7}
+      ]; */
+      
+      var container = document.getElementById('mynetwork');
+
+      const nodes = JSON.parse(container.getAttribute('nodes'));
+      const edges = JSON.parse(container.getAttribute('edges'));
+
+      var data = {nodes: nodes, edges: edges};
+      var options = {
+        edges: {
+          color: {
+            inherit: 'both'
+          },
+          arrows: {
+            to: {
+              enabled: true,
+              scaleFactor: 0.2
+            }
+          },
+          scaling: {
+            label: false
+          },
+          font: {
+            size: 10
+          }
+        },
+        nodes: {
+          shape: 'box',
+          font: {
+            color: 'rgb(248, 248, 255)'
+          }
+        }
+      };
+      var network = new vis.Network(container, data, options);
+
+      network.on("click", function(params) {
+        console.log(params);
+      });
+    </script>
+  </body>
+</html>
