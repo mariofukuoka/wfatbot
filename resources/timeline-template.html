@@ -1,0 +1,54 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Timeline | Basic demo</title>
+
+  <style type="text/css">
+    body, html {
+      font-family: sans-serif;
+    }
+  </style>
+
+  <script src="https://unpkg.com/vis-timeline/standalone/umd/vis-timeline-graph2d.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis-timeline-graph2d.min.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+<div id="timeline" items="" groups=""></div>
+
+<script type="text/javascript">
+  // DOM element where the Timeline will be attached
+  var container = document.getElementById('timeline');
+  let items = JSON.parse(container.getAttribute('items'));
+  const min = items.at(0).start;
+  const max = items.at(-1).start;
+  items = new vis.DataSet(items);
+  console.log(items[0])
+  const groups = new vis.DataSet(JSON.parse(container.getAttribute('groups')));
+  console.log(groups)
+
+  // Configuration for the Timeline
+  var options = {
+    showCurrentTime: false,
+    maxHeight: '90%',
+    min: min,
+    max: max,
+    cluster: {
+      maxItems: 5
+    },
+    type: 'point',
+    stack: false,
+    stackSubgroups: true
+    /* timeAxis: {
+      scale: 'minute',
+      step: 2
+    } */
+  };
+  // Create a Timeline
+  var timeline = new vis.Timeline(container, items, groups, options);
+  timeline.on('select', (params) => {
+    const itemId = params.items[0];
+    console.log(items.get(itemId));
+  });
+</script>
+</body>
+</html>
