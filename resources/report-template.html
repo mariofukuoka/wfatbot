@@ -192,14 +192,15 @@
       }
     };
     var network = new vis.Network(graphContainer, graphData, graphOptions);
-    const graphText = document.getElementById('characterInteractionInfo');
+    const graphInfoElement = document.getElementById('characterInteractionInfo');
 
     network.on('selectNode', function(params) {
       const edgeUpdates = [];
       const nodeId = params.nodes[0];
-      edges.get(params.edges).forEach( edge => {
+      const connectedEdges = edges.get(params.edges);
+      graphInfoElement.innerHTML = `${nodeId}`;
+      connectedEdges.forEach( edge => {
         if (edge.interactionType === 'other' && edge.from === nodeId) edgeUpdates.push({id:edge.id, hidden:false});
-        graphText.innerHTML = `${nodeId}`;
       });
       edges.updateOnly(edgeUpdates);
       network.redraw();
@@ -207,9 +208,10 @@
     network.on('deselectNode', function(params) {
       const edgeUpdates = [];
       const nodeId = params.previousSelection.nodes[0].id;
+      graphInfoElement.innerHTML = '';
       edges.get(params.previousSelection.edges.map(e=>e.id)).forEach( edge => {
         if (edge.interactionType === 'other' && edge.from === nodeId) edgeUpdates.push({id:edge.id, hidden:true});
-        graphText.innerHTML = '';
+        
       });
       edges.updateOnly(edgeUpdates);
       network.redraw();
