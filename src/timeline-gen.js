@@ -24,7 +24,7 @@ const getTimeline = () => {
       item.subgroup = 'kill';
       item.type = 'box';
       item.content = 'Kill'
-      item.label = `Killed ${event.character}${event.vehicle ? ` while in ${event.vehicle}` : ''} with ${event.weapon}${event.isHeadshot ? ' (headshot)' : ''}`;
+      item.title = `Killed: <b>${event.character}</b><br>Using: ${event.weapon}${event.vehicle ? ` (${event.vehicle})` : ''}<br>Headshot: ${event.headshot == true}`;
       deathItems.push(item);
     }
     if (characterSet.has(event.character)) {
@@ -33,12 +33,12 @@ const getTimeline = () => {
       item.type = 'box';
       item.content = 'Death'
       item.style = 'background-color: IndianRed;'
-      item.label = `Died to ${event.attacker}${event.vehicle ? `'s ${event.vehicle}` : ''} from ${event.weapon}${event.isHeadshot ? ' (headshot)' : ''}`;
+      item.title = `Killed by: <b>${event.attacker}</b><br>Using: ${event.weapon}${event.vehicle ? ` (${event.vehicle})` : ''}<br>Headshot: ${event.headshot == true}`;
       deathItems.push(item);
     }
   });
   const experienceItems = db.prepare(
-    `SELECT id, timestamp * 1000 AS start, character AS 'group', description AS content, experienceId AS subgroup FROM experienceEvents
+    `SELECT id, timestamp * 1000 AS start, character AS 'group', description AS content, amount AS title, experienceId AS subgroup FROM experienceEvents
     WHERE character IN (${characters.map(c=>`'${c}'`)})
     ORDER BY timestamp ASC`
     ).all();
@@ -49,7 +49,7 @@ const getTimeline = () => {
       id: char,
     }
   });
-  console.log(groups)
+  console.log(experienceItems)
   return [items, groups]
 }
 

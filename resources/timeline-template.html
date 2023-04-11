@@ -29,11 +29,15 @@
   // Configuration for the Timeline
   var options = {
     showCurrentTime: false,
-    maxHeight: '90%',
+    height: 600,
     min: min,
     max: max,
+    margin: {
+      item: 0
+    },
     cluster: {
-      maxItems: 5
+      maxItems: 5,
+      titleTemplate: '{count} events'
     },
     type: 'point',
     stack: false,
