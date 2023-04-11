@@ -1,4 +1,5 @@
 const fs = require('fs');
+const louvain = require('louvain');
 const { JSDOM } = require('jsdom');
 const { db } = require('./database-api');
 const vehicleStatusMap = require('../api-maps/vehicle-activity-events.json');
@@ -197,10 +198,137 @@ const getInteractionsOverTime = (startTimestamp, endTimestamp) => {
   return interactionsOverTime;
 }
 
+
+const getNodesAndEdgesFromEvents = (startTimestamp, endTimestamp) => {
+  squadExperiencesSet = new Set([
+    '51', '53', '55', '56', '142', '439'
+  ]);
+  const events = db.prepare(
+    `SELECT timestamp, character, faction, other, experienceId, description, amount FROM experienceEvents
+    WHERE otherId % 2 = 1
+    AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}
+    ORDER BY timestamp ASC`
+  ).all();
+  //console.log(events.length)
+  const interactions = {'squad': {}, 'other': {}};
+  const characterFactions = {};
+  events.forEach( event => {
+    if (event.character === event.other) return;
+    const type = (squadExperiencesSet.has(event.experienceId)) ? 'squad' : 'other';
+    //if (type === 'other') return;
+    interactions[type][event.character] = interactions[type][event.character] || {};
+    interactions[type][event.character][event.other] = interactions[type][event.character][event.other] || {};
+    interactions[type][event.character][event.other][event.description] = 
+      interactions[type][event.character][event.other][event.description] + event.amount || event.amount;
+    characterFactions[event.character] = event.faction;
+  });
+
+  //console.log(interactions.squad);
+  const uniqueCharacters = Object.keys(characterFactions);
+  const squadEdges = [];
+  const otherEdges = [];
+  //const visited = new Set();
+  uniqueCharacters.forEach( character1 => {
+    uniqueCharacters.forEach( character2 => {
+      Object.keys(interactions).forEach( type => {
+        //
+        const charPairInteractions = interactions[type][character1]?.[character2] || {}
+        if (Object.keys(charPairInteractions).length > 0) {
+          //console.log(type === 'squad')
+          const totalXp = Object.values(charPairInteractions).reduce((sum, currVal) => sum + currVal, 0);
+          const sorted = Object.entries(charPairInteractions).sort((e1, e2) => e2[1] - e1[1]);
+          //console.log(charPairInteractions)
+          const edge = {
+            from: character1,
+            to: character2,
+            value: totalXp,
+            label: `${sorted[0][0]}`,
+            title: `[${character1}] => [${character2}]\nTotal XP (${type}): ${totalXp}\n${sorted.map( e => `- ${e[0]}: ${e[1]}`).join('\n')}`,
+            hidden: type === 'other',
+            physics: type !== 'other',
+            interactionType: type
+          };
+          if (type === 'squad') {
+            edge.color = 'rgb(44, 149, 44)';
+            squadEdges.push(edge);
+          }
+          else otherEdges.push(edge);
+        }
+      });
+    });
+    //visited.add(character1);
+  });
+  //console.log(edges)
+  const nodes = uniqueCharacters.map( character => { return {id: character, label: character} });
+  return [nodes, squadEdges, otherEdges, characterFactions];
+}
+
+const randomColorStr = (faction) => {
+  const randChannelVal = (min, max) => min + Math.floor(Math.random() * (max - min));
+  let temp = null;
+  switch(faction) {
+    case 'VS':
+      temp = randChannelVal(120, 210);
+      return `rgb(${temp}, ${randChannelVal(40, 80)}, ${temp})`;
+    case 'TR':
+      temp = randChannelVal(40, 80);
+      return `rgb(${randChannelVal(120, 210)}, ${temp}, ${temp})`;
+    case 'NC':
+      temp = randChannelVal(40, 80);
+      return `rgb(${temp}, ${temp}, ${randChannelVal(120, 210)})`;
+    default:
+      temp = randChannelVal(80, 190);
+      return `rgb(${temp}, ${temp}, ${temp})`;
+  }
+}
+
+const getLouvainNodeFormat = nodeData => nodeData.map( n => n.id );
+
+const getLouvainEdgeFormat = (edgeData) => {
+  const louvainEdgeData = [];
+  for (e of edgeData) {
+    louvainEdgeData.push({source: e.from, target: e.to, weight: e.value})
+  }
+  return louvainEdgeData;
+}
+
+const getLouvainParsedNodesAndEdges = (startTimestamp, endTimestamp) => {
+  const [nodeData, edgeData, otherEdgeData, characterFactions] = getNodesAndEdgesFromEvents(startTimestamp, endTimestamp);
+  const louvainNodeData = getLouvainNodeFormat(nodeData);
+  const louvainEdgeData = getLouvainEdgeFormat(edgeData);
+  let community = louvain.jLouvain().nodes(louvainNodeData).edges(louvainEdgeData);
+  let result  = community();
+  colorMap = {};
+  nsoCommunities = new Set();
+  Object.entries(result).forEach( ([char, community]) => {
+    if (!(community in colorMap) && characterFactions[char] !== 'NSO' && characterFactions[char]) {
+      colorMap[community] = randomColorStr(characterFactions[char]);
+    } else nsoCommunities.add(community);
+  });
+  
+  Array.from(nsoCommunities).forEach( community => {
+    if (!(community in colorMap)) colorMap[community] = randomColorStr('NSO');
+  })
+  
+  Object.values(result).forEach( (community, idx) => {
+    nodeData[idx].group = community;
+    nodeData[idx].color = colorMap[community];
+  });
+  
+  const nodeMap = nodeData.reduce( (total, curr) => {
+    total[curr.id] = curr;
+    return total;
+  }, {});
+  
+  edgeData.forEach( edge => {
+    if (nodeMap[edge.from].group !== nodeMap[edge.to].group) edge.dashes = true;
+  });
+  return [nodeData, [...edgeData, ...otherEdgeData]];
+}
+
 const generateReport = (startTimestamp, endTimestamp) => {
   fs.readFile('../resources/report-template.html', 'utf-8', (err, html) => {
     if (err) throw err;
-
     const dom = new JSDOM(html);
     const document = dom.window.document;
     for (let [elementId, chartData] of [
@@ -208,7 +336,7 @@ const generateReport = (startTimestamp, endTimestamp) => {
         ['vehiclesOverTimeChart', getVehiclesOverTime(startTimestamp, endTimestamp)],
         ['interactionsOverTimeChart', getInteractionsOverTime(startTimestamp, endTimestamp)]
       ]) {
-      const element = document.getElementById(elementId);
+      const chartElement = document.getElementById(elementId);
       datasets = [];
       for (let key in chartData) {
         datasets.push({
@@ -217,8 +345,14 @@ const generateReport = (startTimestamp, endTimestamp) => {
           fill: 'stack'
         });
       }
-      element.setAttribute('data', JSON.stringify(datasets));
+      chartElement.setAttribute('data', JSON.stringify(datasets));
     }
+    
+    const [nodes, edges] = getLouvainParsedNodesAndEdges(startTimestamp, endTimestamp);
+    const graphElement = document.getElementById('characterInteractionGraph');
+    graphElement.setAttribute('nodes', JSON.stringify(nodes));
+    graphElement.setAttribute('edges', JSON.stringify(edges));
+
     fs.writeFile(outputFilename, dom.serialize(), (err) => {
       if (err) throw err;
       console.log(`HTML saved to ${outputFilename}`);
@@ -227,7 +361,7 @@ const generateReport = (startTimestamp, endTimestamp) => {
   return outputFilename;
 }
 
-//generateReport(0, Number.MAX_SAFE_INTEGER);
+generateReport(0, Number.MAX_SAFE_INTEGER);
 
 module.exports = {
   generateReport

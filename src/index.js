@@ -54,7 +54,7 @@ async function asyncMain() {
     if (commandName === 'ping') {
       await interaction.reply('Pong!');
     } else if (commandName === 'debug') {
-      const outputFilename = generateReport(0, Number.MAX_SAFE_INTEGER);
+      generateReport(0, Number.MAX_SAFE_INTEGER);
       console.log(outputFilename);
       await interaction.reply({ files: [outputFilename]})
     }

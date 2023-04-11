@@ -5,19 +5,49 @@
 	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/moment@2.27.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@0.1.1"></script>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <style>
     body {  
       background: #1D1F20;
     } 
+    #characterInteractionGraph {
+      width: 60%;
+      height: 400px;
+      border: 1px solid lightgray;
+      margin-left: 50px;
+      margin-bottom: 50px;
+    }
+    .overTimeChart {
+      height: 450px;
+    }
+    .title {
+      margin-left: 40px;
+      font-family: "Helvetica", sans-serif;
+      color:  #f8f8ff;
+    }
+    #characterInteractionInfo {
+      font-family: "Helvetica", sans-serif;
+      color:  #f8f8ff;
+      float: left;
+    }
   </style>
 </head>
 <body>
-	<div>
-		<canvas id="classesOverTimeChart" height="100px" data=""></canvas>
-    <canvas id="vehiclesOverTimeChart" height="100px" data=""></canvas>
-    <canvas id="interactionsOverTimeChart" height="100px" data=""></canvas>
-	</div>
-
+  <div>
+    <div>
+      <div><h2 class="title">Character interaction graph</h2></div>
+      <div>
+        <div id="characterInteractionGraph" style="float: left; margin-right: 50px;" nodes="" edges=""></div>
+        <div id="characterInteractionInfo"><p>test</p></div>
+      </div>
+    </div>
+    <div style="clear: left;">
+      <div><h2 class="title">Overall statistics over time</h2></div>
+      <div><canvas id="classesOverTimeChart" class="overTimeChart" data=""></canvas></div>
+      <div><canvas id="vehiclesOverTimeChart" class="overTimeChart" data=""></canvas></div>
+      <div><canvas id="interactionsOverTimeChart" class="overTimeChart" data=""></canvas></div>
+    </div>
+  </div>
 	<script id="script" >
     //const yLabels = JSON.parse(document.currentScript.getAttribute('y-labels'));
     const classesOverTimeData = {
@@ -29,8 +59,9 @@
     const interactionsOverTimeData = {
       datasets: JSON.parse(document.getElementById('interactionsOverTimeChart').getAttribute('data'))
     };
-    const options = {
-      //maintainAspectRatio: false,
+    const chartOptions = {
+      maintainAspectRatio: false,
+      responsive: true,
       animation: false,
       scales: {
         x: {
@@ -87,42 +118,122 @@
         xAxisKey: 'interval',
         yAxisKey: 'count'
       }, */
-      //responsive: true,
       //maintainAspectRatio: false 
       interaction: {
         intersect: false
       } 
     };
 
-    options.plugins.title.text = 'Classes played over time';
+    chartOptions.plugins.title.text = 'Classes played over time';
     var classesOverTimeChart = new Chart(
       document.getElementById('classesOverTimeChart'),
       {
         type: 'line',
         data: classesOverTimeData,
-        options: options
+        options: chartOptions
       }
     );
     
-    options.plugins.title.text = 'Vehicles played over time';
+    chartOptions.plugins.title.text = 'Vehicles played over time';
     var vehiclesOverTimeChart = new Chart(
       document.getElementById('vehiclesOverTimeChart'),
       {
         type: 'line',
         data: vehiclesOverTimeData,
-        options: options
+        options: chartOptions
       }
     );
     
-    options.plugins.title.text = 'Combined arms interactions (kills) over time';
+    chartOptions.plugins.title.text = 'Combined arms interactions (kills) over time';
     var interactionsOverTimeChart = new Chart(
       document.getElementById('interactionsOverTimeChart'),
       {
         type: 'line',
         data: interactionsOverTimeData,
-        options: options
+        options: chartOptions
       }
     );
+
+    // Graph ----------------------------------------------------------
+    const graphContainer = document.getElementById('characterInteractionGraph');
+    const nodes = new vis.DataSet(JSON.parse(graphContainer.getAttribute('nodes')));
+    const edges = new vis.DataSet(JSON.parse(graphContainer.getAttribute('edges')));
+    const graphData = {nodes: nodes, edges: edges};
+    const graphOptions = {
+      interaction: {
+        hideEdgesOnDrag: true,
+        hideEdgesOnZoom: true
+      },
+      layout: {
+        improvedLayout: false
+      },
+      edges: {
+        color: {
+          inherit: 'to'
+        },
+        arrows: {
+          to: {
+            enabled: true,
+            scaleFactor: 0.2
+          }
+        },
+        scaling: {
+          label: false
+        },
+        font: {
+          size: 10
+        }
+      },
+      nodes: {
+        shape: 'box',
+        font: {
+          color: 'rgb(248, 248, 255)'
+        }
+      }
+    };
+    var network = new vis.Network(graphContainer, graphData, graphOptions);
+    const graphText = document.getElementById('characterInteractionInfo');
+
+    network.on('selectNode', function(params) {
+      const edgeUpdates = [];
+      const nodeId = params.nodes[0];
+      edges.get(params.edges).forEach( edge => {
+        if (edge.interactionType === 'other' && edge.from === nodeId) edgeUpdates.push({id:edge.id, hidden:false});
+        graphText.innerHTML = `${nodeId}`;
+      });
+      edges.updateOnly(edgeUpdates);
+      network.redraw();
+    });
+    network.on('deselectNode', function(params) {
+      const edgeUpdates = [];
+      const nodeId = params.previousSelection.nodes[0].id;
+      edges.get(params.previousSelection.edges.map(e=>e.id)).forEach( edge => {
+        if (edge.interactionType === 'other' && edge.from === nodeId) edgeUpdates.push({id:edge.id, hidden:true});
+        graphText.innerHTML = '';
+      });
+      edges.updateOnly(edgeUpdates);
+      network.redraw();
+    });
+
+    /* network.on('selectNode', function(params) {
+      const edgeUpdates = [];
+      const nodeIds = new Set(params.nodes);
+      console.log(nodeIds)
+      edges.get(params.edges).forEach( edge => {
+        if (edge.interactionType === 'other' && nodeIds.has(edge.from) && nodeIds.has(edge.to)) edgeUpdates.push({id:edge.id, hidden:false});
+      });
+      edges.updateOnly(edgeUpdates);
+      network.redraw();
+    });
+    network.on('deselectNode', function(params) {
+      const edgeUpdates = [];
+      const nodeIds = new Set(params.previousSelection.nodes.map(n => n.id));
+      edges.get(params.previousSelection.edges.map(e=>e.id)).forEach( edge => {
+        if (edge.interactionType === 'other' && (nodeIds.has(edge.from) || nodeIds.has(edge.to))) edgeUpdates.push({id:edge.id, hidden:true});
+      });
+      edges.updateOnly(edgeUpdates);
+      network.redraw();
+    }); */
 	</script>
 </body>
 </html>
