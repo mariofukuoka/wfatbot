@@ -1,7 +1,7 @@
 <!DOCTYPE HTML>
 <html>
 <head>
-  <title>Timeline | Basic demo</title>
+  <title>Event Timeline</title>
 
   <style type="text/css">
     body, html {
@@ -19,8 +19,13 @@
   // DOM element where the Timeline will be attached
   var container = document.getElementById('timeline');
   let items = JSON.parse(container.getAttribute('items'));
-  const min = items.at(0).start;
-  const max = items.at(-1).start;
+  let min = Number.MAX_SAFE_INTEGER;
+  let max = 0;
+  items.forEach( item => {
+    if (item.start < min) min = item.start;
+    if (item.start > max) max = item.start;
+  });
+
   items = new vis.DataSet(items);
   console.log(items[0])
   const groups = new vis.DataSet(JSON.parse(container.getAttribute('groups')));
@@ -29,15 +34,19 @@
   // Configuration for the Timeline
   var options = {
     showCurrentTime: false,
-    height: 600,
+    height: 700,
     min: min,
     max: max,
+    groupHeightMode: 'auto',
     margin: {
       item: 0
     },
     cluster: {
-      maxItems: 5,
-      titleTemplate: '{count} events'
+      maxItems: 6,
+      titleTemplate: '{count} events',
+      clusterCriteria: (item1, item2) => {
+        return !isNaN(item1.subgroup) && !isNaN(item2.subgroup);
+      }
     },
     type: 'point',
     stack: false,
