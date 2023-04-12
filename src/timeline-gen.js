@@ -2,146 +2,163 @@
 const { JSDOM } = require('jsdom');
 const { db } = require('./database-api');
 const fs = require('fs');
+const itemMap = require('../api-maps/item-map.json');
 
-const outputFilename = '../output/output_timeline.html'
+const outputFilename = '../output/output-timeline.html'
 
-const classColorMap = {
-  'Light Assault': 'Cyan',
-  'Heavy Assault': 'OrangeRed',
-  'Combat Medic': 'ForestGreen',
-  'Engineer': 'DeepPink',
-  'Infiltrator': 'SlateBlue',
-  'MAX': 'Gold',
-  'Defector': 'Gray'
-}
-
-const getOtherRepr = (otherId, other) => {
-  if (other) return other;
-  else if (otherId > 0) return `NPC...${otherId.slice(-5, -1)}`;
-  else return 'null';
-}
-
-const initStreak = (event) => {
-  return {
-    id: event.id,
-    start: event.timestamp,
-    end: event.timestamp,
-    count: 1,
-    amount: event.amount,
-    others: [getOtherRepr(event.otherId, event.other)],
-  }
-};
-
-const getExperienceItem = (char, eventName, streak) => {
-  const parsedOtherList = Object.entries(streak.others.reduce( (obj , other) => {
-    obj[other] = obj[other] + 1 || 1;
-    return obj;
-  }, {})).map( ([other, count]) => {
-    if (count > 1) return `${other} (x${count})`;
-    else return other;
-  });
-  const item = {
-    id: streak.id,
-    group: char,
-    content: eventName,
-    subgroup: 'experience',
-    start: streak.start * 1000,
-    title: `With: ${parsedOtherList.join(', ')}<br>XP: ${streak.amount}`
-  };
-  if (streak.start !== streak.end) {
-    item.end = streak.end * 1000;
-    item.content += ` (x${streak.count})`;
-    item.title += ` from ${streak.count} events over ${streak.end - streak.start} seconds`;
-  }
-  return item;
-}
-
+const boxHightlightStyle = 'border-color: gold; color: gold;'
+const pointHightlightStyle = 'color: #ffd700;'
+const boxKillStyle = 'background-color: #25744d; color: #33CC33;';
+const boxDeathStyle = 'background-color: #990000; color: #ff5959;';
 
 const getTimeline = () => {
+
   const characters = ['BlackAdlerTR', 'judex23', 'geekFR', 'Airturret']
-  /* const characters = db.prepare(
-    `SELECT DISTINCT character FROM (
-      SELECT DISTINCT character FROM experienceEvents
-      UNION
-      SELECT DISTINCT other AS character FROM experienceEvents)`
-    ).all().slice(1,21).map(c=>c.character);
-  console.log(characters) */
+  const quoteEnclosedCharacters = characters.map(c=>`'${c}'`);
+
+  const getOtherRepr = (otherId, other) => {
+    if (other) return other;
+    else if (otherId > 0) return `NPC...${otherId.slice(-5, -1)}`;
+    else return 'null';
+  }
+  
+  const initStreak = (event) => {
+    return {
+      id: event.id,
+      start: event.timestamp,
+      end: event.timestamp,
+      count: 1,
+      amount: event.amount,
+      others: [getOtherRepr(event.otherId, event.other)],
+    }
+  };
+  
+  const getExperienceItem = (char, eventName, streak) => {
+    const parsedOtherList = Object.entries(streak.others.reduce( (obj , other) => {
+      obj[other] = obj[other] + 1 || 1;
+      return obj;
+    }, {})).map( ([other, count]) => {
+      if (count > 1) return `${other} (x${count})`;
+      else return other;
+    });
+    const item = {
+      id: streak.id,
+      group: char,
+      content: eventName,
+      subgroup: 'experience',
+      start: streak.start * 1000,
+      title: `With: ${parsedOtherList.join(', ')}<br>XP: ${streak.amount}`
+    };
+    if (streak.start !== streak.end) {
+      item.end = streak.end * 1000;
+      item.content += ` (x${streak.count})`;
+      item.title += ` from ${streak.count} events over ${streak.end - streak.start} seconds`;
+    }
+    // if any of the 'others' are one of the tracked chars, highlight item
+    if (streak.others.reduce((otherInChars, other) => otherInChars || (characterSet.has(other) && other !== char), false)) {
+      item.style = pointHightlightStyle;
+    }
+    return item;
+  }
+  
+  const classCheckpoints = [];
   const deathEvents = db.prepare(
-    `SELECT id, timestamp, attacker, character, attackerWeapon as weapon, attackerVehicle as vehicle, isHeadshot FROM deathEvents
-    WHERE character IN (${characters.map(c=>`'${c}'`)}) OR attacker in (${characters.map(c=>`'${c}'`)})`
+    `SELECT * FROM deathEvents
+    WHERE character IN (${quoteEnclosedCharacters}) OR attacker in (${quoteEnclosedCharacters})`
     ).all();
   //console.log(events);
   const deathItems = [];
   const vehicleDestroyItems = [];
   const characterSet = new Set(characters);
   deathEvents.forEach( event => {
+    classCheckpoints.push({timestamp: event.timestamp, character: event.character, class: event.class});
+    classCheckpoints.push({timestamp: event.timestamp, character: event.attacker, class: event.attackerClass});
     const item = {
       start: event.timestamp * 1000,
       subgroup: 'death',
-      type: 'box'
+      type: 'box',
+      title: `Continent: ${event.continent}</br>`
     }
-    if (characterSet.has(event.attacker)) {
-      item.group = event.attacker;
-      item.content = 'Kill'
-      item.style = 'background-color: #25744d;'
-      item.title = `Killed: <b>${event.character}</b><br>Using: ${event.weapon}${event.vehicle ? ` (${event.vehicle})` : ''}<br>Headshot: ${event.headshot == true}`;
-      deathItems.push(item);
+    if (characterSet.has(event.attacker) && event.attacker !== event.character) {
+      const killItem = {...item};
+      killItem.group = event.attacker;
+      killItem.content = `⚔️ ${event.faction} ${event.class}`
+      killItem.style = boxKillStyle;
+      killItem.title += `Killed: <b>${event.character}</b> (${event.faction} ${event.class})<br>Using: ${event.weapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}${event.headshot ? '<br>Headshot' : ''}`;
+      if (characterSet.has(event.character)) {
+        killItem.style += boxHightlightStyle;
+        killItem.content = `⚔️ <b>${event.character}</b>'s ${event.faction} ${event.class}`;
+      }
+      killItem.content += `${event.attackerVehicle ? ` as ${event.attackerVehicle}` : ''}`;
+      deathItems.push(killItem);
     }
     if (characterSet.has(event.character)) {
-      item.group = event.character;
-      item.subgroup = 'death';
-      item.type = 'box';
-      item.content = 'Death'
-      item.style = 'background-color: IndianRed;'
-      item.title = `Killed by: <b>${event.attacker}</b><br>Using: ${event.weapon}${event.vehicle ? ` (${event.vehicle})` : ''}<br>Headshot: ${event.headshot == true}`;
-      deathItems.push(item);
+      const deathItem = {...item};
+      deathItem.group = event.character;
+      if (event.attacker !== event.character) deathItem.content = `💀 to ${event.attackerFaction} ${event.attackerClass}`;
+      else deathItem.content = 'Suicide';
+      deathItem.style = boxDeathStyle;
+      deathItem.title += `Killed by: <b>${event.attacker}</b> (${event.attackerFaction} ${event.attackerClass})<br>Using: ${event.weapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}${event.headshot ? '<br>Headshot' : ''}`;
+      if (characterSet.has(event.attacker) && event.attacker !== event.character) {
+        deathItem.style += boxHightlightStyle;
+        deathItem.content = `💀 to <b>${event.attacker}</b>'s ${event.attackerFaction} ${event.attackerVehicle ? ` ${event.attackerVehicle}` : ` ${event.attackerClass}`}`;
+      }
+      deathItems.push(deathItem);
     }
   });
+
+
   const vehicleDestroyEvents = db.prepare(
-    `SELECT id, timestamp, attacker, character, attackerWeapon as weapon, attackerVehicle, vehicle FROM vehicleDestroyEvents
-    WHERE character IN (${characters.map(c=>`'${c}'`)}) OR attacker in (${characters.map(c=>`'${c}'`)})`
+    `SELECT * FROM vehicleDestroyEvents
+    WHERE character IN (${quoteEnclosedCharacters}) OR attacker in (${quoteEnclosedCharacters})`
     ).all();
   vehicleDestroyEvents.forEach( event => {
+    classCheckpoints.push({timestamp: event.timestamp, character: event.attacker, class: event.attackerClass});
     const item = {
       start: event.timestamp * 1000,
       subgroup: 'vehicleDestroy',
-      type: 'box'
+      type: 'box',
+      title: `Continent: ${event.continent}</br>`
     }
-    if (characterSet.has(event.attacker)) {
-      item.group = event.attacker;
-      item.content = 'Vehicle Kill'
-      item.style = 'background-color: #25744d;'
-      item.title = `Destroyed: ${event.vehicle || 'unknown'}<br>Owner: <b>${event.character}</b><br>Using: ${event.weapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}`;
-      deathItems.push(item);
+    if (characterSet.has(event.attacker) && event.attacker !== event.character) {
+      const vehicleKillItem = {...item};
+      vehicleKillItem.group = event.attacker;
+      vehicleKillItem.content = `Destroyed ${event.faction} ${event.vehicle}`;
+      vehicleKillItem.style = boxKillStyle;
+      vehicleKillItem.title += `Destroyed: ${event.faction} ${event.vehicle || 'unknown'}<br>Owner: <b>${event.character}</b><br>Using: ${event.weapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}`;
+      if (characterSet.has(event.character)) {
+        vehicleKillItem.style += boxHightlightStyle;
+        vehicleKillItem.content = `Destroyed <b>${event.character}</b>'s ${event.faction} ${event.vehicle}`;
+      }
+      vehicleKillItem.content += `${event.attackerVehicle ? ` as ${event.attackerVehicle}` : ''}`;
+      deathItems.push(vehicleKillItem);
     }
     if (characterSet.has(event.character)) {
-      item.group = event.character;
-      item.content = 'Vehicle Lost'
-      item.style = 'background-color: IndianRed;'
-      item.title = `Vehicle lost: ${event.vehicle || 'unknown'}<br>Destroyed by: <b>${event.attacker}</b><br>Using: ${event.weapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}`;
-      deathItems.push(item);
+      const vehicleLossItem = {...item};
+      vehicleLossItem.group = event.character;
+      vehicleLossItem.content = `Lost ${event.vehicle} to ${event.attackerFaction} ${event.attackerVehicle ? `${event.attackerVehicle}` : `${event.attackerClass}`}`;
+      vehicleLossItem.style = boxDeathStyle;
+      vehicleLossItem.title += `Vehicle lost: ${event.vehicle || 'unknown'}<br>Destroyed by: <b>${event.attacker}</b> (${event.attackerFaction} ${event.attackerClass})<br>Using: ${event.weapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}`;
+      if (characterSet.has(event.attacker) && event.attacker !== event.character) {
+        vehicleLossItem.style += boxHightlightStyle;
+        vehicleLossItem.content = `Lost ${event.vehicle} to <b>${event.attacker}</b>'s ${event.attackerFaction} ${event.attackerVehicle ? `${event.attackerVehicle}` : `${event.attackerClass}`}`;
+      }
+      if (event.character === event.attacker && !event.weapon) vehicleLossItem.content = `Crashed ${event.vehicle}`;
+      deathItems.push(vehicleLossItem);
     }
   });
+
+
   const experienceEvents = db.prepare(
     `SELECT id, timestamp, character, otherId, other, description, class, amount FROM experienceEvents
-    WHERE character IN (${characters.map(c=>`'${c}'`)})
+    WHERE character IN (${quoteEnclosedCharacters})
     ORDER BY timestamp ASC`
     ).all();
   const experienceItems = [];
   const eventStreaks = {};
-  const classPlaytime = {};
-  let lastEventTimestamp = null;
   experienceEvents.forEach( event => {
+    classCheckpoints.push({timestamp: event.timestamp, character: event.character, class: event.class});
     const char = event.character;
-    // class playtime logic
-    classPlaytime[char] = classPlaytime[char] || [{class: event.class, start: event.timestamp, end: event.timestamp}];
-    const lastIdx = classPlaytime[char].length - 1;
-    classPlaytime[char][lastIdx].end = event.timestamp;
-    if (classPlaytime[char][lastIdx].class !== event.class) {
-      classPlaytime[char].push({class: event.class, start: event.timestamp, end: event.timestamp})
-    }
-    lastEventTimestamp = event.timestamp;
-
     // streak logic
     eventStreaks[char] = eventStreaks[char] || {};
     if (event.description in eventStreaks[char]) {
@@ -166,6 +183,18 @@ const getTimeline = () => {
       experienceItems.push(getExperienceItem(char, eventName, streak));
     });
   });
+
+  classCheckpoints.sort((a, b) => a.timestamp - b.timestamp);
+  const classPlaytime = {};
+  classCheckpoints.forEach( checkpoint => {
+    char = checkpoint.character;
+    classPlaytime[char] = classPlaytime[char] || [{class: checkpoint.class, start: checkpoint.timestamp, end: checkpoint.timestamp}];
+    const lastIdx = classPlaytime[char].length - 1;
+    if (classPlaytime[char][lastIdx].class !== checkpoint.class) {
+      classPlaytime[char].push({class: checkpoint.class, start: checkpoint.timestamp, end: checkpoint.timestamp})
+    } 
+    else classPlaytime[char][lastIdx].end = checkpoint.timestamp;
+  });
   
   const classPlaytimeItems = [];
   Object.entries(classPlaytime).forEach( ([char, playtimes]) => {
@@ -174,14 +203,99 @@ const getTimeline = () => {
         group: char,
         start: playtime.start * 1000,
         end: playtime.end * 1000,
-        content: playtime.class,
+        content: `<b>${playtime.class}</b>`,
         type: 'background',
-        style: `color: white; background-color: black; opacity: 0.5; border: 1px solid white;`
+        style: `color: white; background-color: #282838; opacity: 0.5; border: 1px solid white;`
       }
       classPlaytimeItems.push(item);
     });
   });
-  const items = [...deathItems, ...vehicleDestroyItems, ...experienceItems, ...classPlaytimeItems]
+
+  const playerFacilityEvents = db.prepare(
+    `SELECT timestamp, character, type, facility, facilityId, continent FROM playerFacilityEvents
+    WHERE character IN (${quoteEnclosedCharacters})`
+    ).all();
+  const playerFacilityItems = [];
+  playerFacilityEvents.forEach( event => {
+    const item = {
+      start: event.timestamp * 1000,
+      group: event.character,
+      subgroup: 'facility',
+      type: 'box',
+      content: `${event.type === 'PlayerFacilityCapture' ? '🚩 Captured' : '🛡️ Defended'} ${event.facility ? `<b>${event.facility}</b>`: `unknown facility ${event.facilityId}`}<br>on ${event.continent}`,
+      title: `Type: ${event.type}<br>Facility: ${event.facility}<br>Continent: ${event.continent}`,
+      style: 'color: #d2dcdf; background-color: #222233; border-color: #d2dcdf;'
+    }
+    playerFacilityItems.push(item);
+  });
+
+  const playerSessionEvents = db.prepare(
+    `SELECT * FROM playerSessionEvents
+    WHERE character IN (${quoteEnclosedCharacters})`
+    ).all();
+  const playerSessionItems = [];
+  playerSessionEvents.forEach( event => {
+    const item = {
+      start: event.timestamp * 1000,
+      group: event.character,
+      subgroup: 'session',
+      type: 'box',
+      content: `${event.type === 'PlayerLogin' ? '📡 <i>Logged in to' : '💤 <i>Logged out of'} ${event.server}</i>`,
+      title: `Type: ${event.type}<br>Server: ${event.server}`,
+      style: 'color: #d2dcdf; background-color: #222233; border-color: #d2dcdf;'
+    }
+    playerSessionItems.push(item);
+  });
+
+  const skillAddedEvents = db.prepare(
+    `SELECT * FROM skillAddedEvents
+    WHERE character IN (${quoteEnclosedCharacters})`
+    ).all();
+  const skillAddedItems = [];
+  skillAddedEvents.forEach( event => {
+    const item = {
+      start: event.timestamp * 1000,
+      group: event.character,
+      subgroup: 'skillAdded',
+      type: 'box',
+      content: `🔓 Unlocked ${event.name}`,
+      title: `Skill: ${event.name}<br>Skill line: ${event.skillLine}<br>Skill points: ${event.skillPoints}`,
+      style:  'color: #d2dcdf; background-color: #222233; border-color: #d2dcdf;'
+    }
+    skillAddedItems.push(item);
+  });
+
+  const itemAddedEvents = db.prepare(
+    `SELECT * FROM itemAddedEvents
+    WHERE character IN (${quoteEnclosedCharacters})`
+    ).all();
+  const itemAddedItems = [];
+  itemAddedEvents.forEach( event => {
+    const unlockedItem = itemMap[event.itemId];
+    const parentItems = unlockedItem.parentItems.map(item=>itemMap[item].name);
+    const item = {
+      start: event.timestamp * 1000,
+      group: event.character,
+      subgroup: 'itemAdded',
+      type: 'box',
+      content: `💰 Bought ${event.name}${parentItems.length > 0 ? ` for ${parentItems[0]}` : ''}`,
+      title: `Item: ${event.name}<br>Type: ${event.type}<br>Category: ${event.category}<br>Skill set: ${event.skillSet}<br>Item count: ${event.itemCount}<br>Context: ${event.context}`,
+      style:  'color: #d2dcdf; background-color: #222233; border-color: #d2dcdf;'
+    }
+    if (unlockedItem.classes.length > 0) item.title += `<br>For: ${unlockedItem.classes.join(', ')}`;
+    itemAddedItems.push(item);
+  });
+
+  const items = [
+    ...deathItems, 
+    ...vehicleDestroyItems, 
+    ...experienceItems, 
+    ...classPlaytimeItems, 
+    ...playerFacilityItems, 
+    ...playerSessionItems,
+    ...skillAddedItems,
+    ...itemAddedItems
+  ];
   const groups = characters.map( char => {
      return { 
       id: char,
