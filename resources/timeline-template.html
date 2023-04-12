@@ -7,6 +7,20 @@
     body, html {
       font-family: sans-serif;
     }
+    body {  
+      background: #1D1F20;
+    } 
+    .vis-item .vis-range {
+      color: ghostwhite;
+      background-color: darkgrey;
+    }
+    .vis-item.vis-point {
+      color: grey;
+    }
+    .vis-item.vis-box {
+      color: ghostwhite;
+      border-color: ghostwhite;
+    }
   </style>
 
   <script src="https://unpkg.com/vis-timeline/standalone/umd/vis-timeline-graph2d.min.js"></script>
@@ -38,18 +52,21 @@
     min: min,
     max: max,
     groupHeightMode: 'auto',
+    orientation: {
+      axis: 'both'
+    },
     margin: {
       item: 0
     },
     cluster: {
-      maxItems: 6,
+      maxItems: 4,
       titleTemplate: '{count} events',
       clusterCriteria: (item1, item2) => {
-        return !isNaN(item1.subgroup) && !isNaN(item2.subgroup);
+        return item1.subgroup === 'experience' && item2.subgroup === 'experience';
       }
     },
     type: 'point',
-    stack: false,
+    stack: true,
     stackSubgroups: true
     /* timeAxis: {
       scale: 'minute',
