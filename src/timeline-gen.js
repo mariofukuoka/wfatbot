@@ -221,12 +221,12 @@ const getTimeline = () => {
   const classPlaytimeItems = [];
   Object.entries(classPlaytime).forEach( ([char, playtimes]) => {
     playtimes.forEach( playtime => {
-      const timePlayed = new Date((playtime.end - playtime.start) * 1000);
+      const secondsPlayed = playtime.end - playtime.start;
       const item = {
         group: char,
         start: playtime.start * 1000,
         end: playtime.end * 1000,
-        content: `<b>${playtime.class}</b> (${timePlayed.getMinutes()}m${timePlayed.getSeconds()}s)`,
+        content: `<b>${playtime.class}</b> (${Math.floor(secondsPlayed/60)}m${secondsPlayed % 60}s)`,
         type: 'background',
         style: `color: white; background-color: #282838; opacity: 0.5; border: 1px solid white;`
       }
