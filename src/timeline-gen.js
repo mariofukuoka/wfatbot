@@ -13,7 +13,8 @@ const boxDeathStyle = 'background-color: #990000; color: #ff5959;';
 
 const getTimeline = () => {
 
-  const characters = ['BlackAdlerTR', 'judex23', 'geekFR', 'Airturret']
+  //const characters = ['BlackAdlerTR', 'judex23', 'geekFR', 'Airturret']
+  const characters = ['NymphettaManiacC', 'Ctronix', 'NightStallion91', 'sinnzy']
   const quoteEnclosedCharacters = characters.map(c=>`'${c}'`);
 
   const getOtherRepr = (otherId, other) => {
@@ -184,6 +185,25 @@ const getTimeline = () => {
     });
   });
 
+  const playerSessionEvents = db.prepare(
+    `SELECT * FROM playerSessionEvents
+    WHERE character IN (${quoteEnclosedCharacters})`
+    ).all();
+  const playerSessionItems = [];
+  playerSessionEvents.forEach( event => {
+    classCheckpoints.push({timestamp: event.timestamp, character: event.character, class: null});
+    const item = {
+      start: event.timestamp * 1000,
+      group: event.character,
+      subgroup: 'session',
+      type: 'box',
+      content: `${event.type === 'PlayerLogin' ? '📡 <i>Logged in to' : '💤 <i>Logged out of'} ${event.server}</i>`,
+      title: `Type: ${event.type}<br>Server: ${event.server}`,
+      style: 'color: #d2dcdf; background-color: #222233; border-color: #d2dcdf;'
+    }
+    playerSessionItems.push(item);
+  });
+
   classCheckpoints.sort((a, b) => a.timestamp - b.timestamp);
   const classPlaytime = {};
   classCheckpoints.forEach( checkpoint => {
@@ -191,9 +211,11 @@ const getTimeline = () => {
     classPlaytime[char] = classPlaytime[char] || [{class: checkpoint.class, start: checkpoint.timestamp, end: checkpoint.timestamp}];
     const lastIdx = classPlaytime[char].length - 1;
     if (classPlaytime[char][lastIdx].class !== checkpoint.class) {
-      classPlaytime[char].push({class: checkpoint.class, start: checkpoint.timestamp, end: checkpoint.timestamp})
-    } 
-    else classPlaytime[char][lastIdx].end = checkpoint.timestamp;
+      classPlaytime[char].push({class: checkpoint.class, start: checkpoint.timestamp, end: checkpoint.timestamp});
+    }
+    else if (checkpoint.class) {
+      classPlaytime[char][lastIdx].end = checkpoint.timestamp;
+    }
   });
   
   const classPlaytimeItems = [];
@@ -227,24 +249,6 @@ const getTimeline = () => {
       style: 'color: #d2dcdf; background-color: #222233; border-color: #d2dcdf;'
     }
     playerFacilityItems.push(item);
-  });
-
-  const playerSessionEvents = db.prepare(
-    `SELECT * FROM playerSessionEvents
-    WHERE character IN (${quoteEnclosedCharacters})`
-    ).all();
-  const playerSessionItems = [];
-  playerSessionEvents.forEach( event => {
-    const item = {
-      start: event.timestamp * 1000,
-      group: event.character,
-      subgroup: 'session',
-      type: 'box',
-      content: `${event.type === 'PlayerLogin' ? '📡 <i>Logged in to' : '💤 <i>Logged out of'} ${event.server}</i>`,
-      title: `Type: ${event.type}<br>Server: ${event.server}`,
-      style: 'color: #d2dcdf; background-color: #222233; border-color: #d2dcdf;'
-    }
-    playerSessionItems.push(item);
   });
 
   const skillAddedEvents = db.prepare(
