@@ -14,7 +14,7 @@ const boxDeathStyle = 'background-color: #990000; color: #ff5959;';
 const getTimeline = () => {
 
   //const characters = ['BlackAdlerTR', 'judex23', 'geekFR', 'Airturret']
-  const characters = ['NymphettaManiacC', 'Ctronix', 'NightStallion91', 'sinnzy']
+  const characters = ['Hanketsu', 'JelzinBOSS', 'Tpyc', 'Com784']
   const quoteEnclosedCharacters = characters.map(c=>`'${c}'`);
 
   const getOtherRepr = (otherId, other) => {
@@ -85,7 +85,7 @@ const getTimeline = () => {
       killItem.group = event.attacker;
       killItem.content = `⚔️ ${event.faction} ${event.class}`
       killItem.style = boxKillStyle;
-      killItem.title += `Killed: <b>${event.character}</b> (${event.faction} ${event.class})<br>Using: ${event.weapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}${event.headshot ? '<br>Headshot' : ''}`;
+      killItem.title += `Killed: <b>${event.character}</b> (${event.faction} ${event.class})<br>Using: ${event.attackerWeapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}${event.headshot ? '<br>Headshot' : ''}`;
       if (characterSet.has(event.character)) {
         killItem.style += boxHightlightStyle;
         killItem.content = `⚔️ <b>${event.character}</b>'s ${event.faction} ${event.class}`;
@@ -99,7 +99,7 @@ const getTimeline = () => {
       if (event.attacker !== event.character) deathItem.content = `💀 to ${event.attackerFaction} ${event.attackerClass}`;
       else deathItem.content = 'Suicide';
       deathItem.style = boxDeathStyle;
-      deathItem.title += `Killed by: <b>${event.attacker}</b> (${event.attackerFaction} ${event.attackerClass})<br>Using: ${event.weapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}${event.headshot ? '<br>Headshot' : ''}`;
+      deathItem.title += `Killed by: <b>${event.attacker}</b> (${event.attackerFaction} ${event.attackerClass})<br>Using: ${event.attackerWeapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}${event.headshot ? '<br>Headshot' : ''}`;
       if (characterSet.has(event.attacker) && event.attacker !== event.character) {
         deathItem.style += boxHightlightStyle;
         deathItem.content = `💀 to <b>${event.attacker}</b>'s ${event.attackerFaction} ${event.attackerVehicle ? ` ${event.attackerVehicle}` : ` ${event.attackerClass}`}`;
@@ -126,7 +126,7 @@ const getTimeline = () => {
       vehicleKillItem.group = event.attacker;
       vehicleKillItem.content = `Destroyed ${event.faction} ${event.vehicle}`;
       vehicleKillItem.style = boxKillStyle;
-      vehicleKillItem.title += `Destroyed: ${event.faction} ${event.vehicle || 'unknown'}<br>Owner: <b>${event.character}</b><br>Using: ${event.weapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}`;
+      vehicleKillItem.title += `Destroyed: ${event.faction} ${event.vehicle || 'unknown'}<br>Owner: <b>${event.character}</b><br>Using: ${event.attackerWeapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}`;
       if (characterSet.has(event.character)) {
         vehicleKillItem.style += boxHightlightStyle;
         vehicleKillItem.content = `Destroyed <b>${event.character}</b>'s ${event.faction} ${event.vehicle}`;
@@ -139,12 +139,12 @@ const getTimeline = () => {
       vehicleLossItem.group = event.character;
       vehicleLossItem.content = `Lost ${event.vehicle} to ${event.attackerFaction} ${event.attackerVehicle ? `${event.attackerVehicle}` : `${event.attackerClass}`}`;
       vehicleLossItem.style = boxDeathStyle;
-      vehicleLossItem.title += `Vehicle lost: ${event.vehicle || 'unknown'}<br>Destroyed by: <b>${event.attacker}</b> (${event.attackerFaction} ${event.attackerClass})<br>Using: ${event.weapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}`;
+      vehicleLossItem.title += `Vehicle lost: ${event.vehicle || 'unknown'}<br>Destroyed by: <b>${event.attacker}</b> (${event.attackerFaction} ${event.attackerClass})<br>Using: ${event.attackerWeapon || 'unknown'}${event.attackerVehicle ? ` (${event.attackerVehicle})` : ''}`;
       if (characterSet.has(event.attacker) && event.attacker !== event.character) {
         vehicleLossItem.style += boxHightlightStyle;
         vehicleLossItem.content = `Lost ${event.vehicle} to <b>${event.attacker}</b>'s ${event.attackerFaction} ${event.attackerVehicle ? `${event.attackerVehicle}` : `${event.attackerClass}`}`;
       }
-      if (event.character === event.attacker && !event.weapon) vehicleLossItem.content = `Crashed ${event.vehicle}`;
+      if (event.character === event.attacker && !event.attackerWeapon) vehicleLossItem.content = `Crashed ${event.vehicle}`;
       deathItems.push(vehicleLossItem);
     }
   });
@@ -221,11 +221,12 @@ const getTimeline = () => {
   const classPlaytimeItems = [];
   Object.entries(classPlaytime).forEach( ([char, playtimes]) => {
     playtimes.forEach( playtime => {
+      const timePlayed = new Date((playtime.end - playtime.start) * 1000);
       const item = {
         group: char,
         start: playtime.start * 1000,
         end: playtime.end * 1000,
-        content: `<b>${playtime.class}</b>`,
+        content: `<b>${playtime.class}</b> (${timePlayed.getMinutes()}m${timePlayed.getSeconds()}s)`,
         type: 'background',
         style: `color: white; background-color: #282838; opacity: 0.5; border: 1px solid white;`
       }
@@ -244,7 +245,7 @@ const getTimeline = () => {
       group: event.character,
       subgroup: 'facility',
       type: 'box',
-      content: `${event.type === 'PlayerFacilityCapture' ? '🚩 Captured' : '🛡️ Defended'} ${event.facility ? `<b>${event.facility}</b>`: `unknown facility ${event.facilityId}`}<br>on ${event.continent}`,
+      content: `${event.type === 'PlayerFacilityCapture' ? '🚩 Captured' : '🛡️ Defended'} ${event.facility ? `<b>${event.facility}</b>`: `unknown facility ${event.facilityId}`}`,
       title: `Type: ${event.type}<br>Facility: ${event.facility}<br>Continent: ${event.continent}`,
       style: 'color: #d2dcdf; background-color: #222233; border-color: #d2dcdf;'
     }
