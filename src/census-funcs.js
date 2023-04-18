@@ -23,6 +23,56 @@ async function getCharacter(charId) {
   }
 }
 
+const getCharacterDetails = async charName => {
+  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/character`
+  + `?name.first_lower=${charName.toLowerCase()}&c:lang=en&c:show=character_id,name,battle_rank.value,prestige_level,faction_id`
+  + `&c:join=outfit_member^on:character_id^to:character_id^inject_at:member^show:outfit_id'character_id`
+  +   `(outfit^inject_at:outfit^show:name'alias'outfit_id)`
+  + `&c:join=characters_world^inject_at:characters_world(world^inject_at:world^hide:state)`
+  + `&c:join=faction^inject_at:faction^show:code_tag`;
+  try {
+    const res = await axios.get(url);
+    const resChar = res.data.character_list[0];
+    const characterDetails = {
+      characterId: resChar.character_id,
+      character: resChar.name.first,
+      faction: resChar.faction.code_tag,
+      server: resChar.characters_world.world.name.en,
+      outfitTag: resChar?.member?.outfit?.alias || null,
+      battleRank: `${parseInt(resChar.prestige_level)*100 + parseInt(resChar.battle_rank.value)}`
+    }
+    return characterDetails;
+  } catch (e) {
+    console.log(`Failed to resolve character ${charName}:`, e);
+    return null;
+  }
+}
+
+const getOutfitDetails = async outfitTag => {
+  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/outfit`
+  + `?alias_lower=${outfitTag.toLowerCase()}&c:lang=en`
+  + `&c:join=characters_world^on:leader_character_id^to:character_id^inject_at:leaders_world(world^hide:state^inject_at:world)`
+  + `&c:join=character^on:leader_character_id^to:character_id^inject_at:leader^show:character_id'name.first'faction_id(faction^inject_at:faction^show:faction_id'code_tag)`;
+  try {
+    const res = await axios.get(url);
+    const resOutfit = res.data.outfit_list[0];
+    const outfitDetails = {
+      outfitId: resOutfit.outfit_id,
+      outfitTag: resOutfit.alias,
+      outfitName: resOutfit.name,
+      leader: resOutfit.leader.name.first,
+      memberCount: resOutfit.member_count,
+      faction: resOutfit?.leader.faction.code_tag,
+      server: resOutfit?.leaders_world.world.name.en
+    }
+    return outfitDetails;
+  } catch (e) {
+    console.log(e, outfitTag);
+    return null;
+  }
+}
+
+
 async function getCharacterMap(charNames) {
     // map names onto promises of requests for corresponding ids
     let promises = [];
@@ -53,7 +103,7 @@ async function getCharacterMap(charNames) {
     return charMap;
 }
 
-async function getMemberNames(outfitTag) {
+/* async function getMemberNames(outfitTag) {
     let memberNames = [];
     const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/outfit/?alias_lower=${outfitTag.toLowerCase()}&c:resolve=member_character(name,members_character_id)`;
     const response = await axios.get(url);
@@ -65,7 +115,45 @@ async function getMemberNames(outfitTag) {
         }
     }
     return memberNames;
+} */
+
+async function getMemberMap(outfitTag, teamId=null) {
+  const memberMap = {};
+  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/outfit/?alias_lower=${outfitTag.toLowerCase()}&c:show=outfit_id,alias_lower&c:join=outfit_member^inject_at:members^list:1^show:outfit_id'character_id(character_name^on:character_id^to:character_id^inject_at:character)`;
+  const response = await axios.get(url);
+  //console.log(response.data)
+  response.data.outfit_list[0].members.forEach(member => {
+      if (member?.character?.name?.first) memberMap[member.character_id] = { name: member.character.name.first, teamId: teamId };
+  });
+  return memberMap;
 }
+
+async function filterOnline(charIds) {
+  const promises = [];
+  charIds.forEach( charId => {
+    const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/characters_online_status?character_id=${charId}`;
+    promises.push(axios.get(url));
+  });
+  const responses = await Promise.all(promises);
+  const onlineChars = [];
+  responses.forEach( response => {
+    try {
+      const char = response.data.characters_online_status_list[0];
+      if (!!parseInt(char.online_status)) {
+        onlineChars.push(char.character_id);
+      }
+    } catch (e) {
+      console.log('Failed to filter char ids', e);
+    }
+  });
+  return onlineChars;
+}
+
+/* (async () => {
+  const a = await getMemberMap('vcbc', 'WFAT');
+  console.log(a);
+  console.log(await filterOnline(Object.keys(a)));
+})();  */
 
 /**
  * @returns {{experienceId: {desc:string, xp:string}}}
@@ -300,7 +388,7 @@ async function getSkillMap() {
     const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/skill`
     + `?c:start=${start}&c:limit=${limit}`
     + `&c:lang=en&c:show=skill_id,skill_line_id,skill_line_index,skill_points,grant_item_id,name`
-    + `&c:join=skill_line^inject_at:skill_line^show:skill_line_id%27name%27skill_points`
+    + `&c:join=skill_line^inject_at:skill_line^show:skill_line_id'name'skill_points`
     promises.push(axios.get(url));
   }
   const responses = await Promise.all(promises);
@@ -318,16 +406,13 @@ async function getSkillMap() {
   return skillMap;
 }
 
-/* (async () => {
-  await getVehicleActivityEvents();
-})(); */
 
 
 // set exports to allow main file to access funcs
 module.exports = {
     getCharacter,
     getCharacterMap,
-    getMemberNames,
+    //getMemberNames,
     getExperienceMap,
     getVehicleActivityEvents,
     getLoadoutMap,
@@ -337,5 +422,9 @@ module.exports = {
     getRegionMap,
     getZoneMap,
     getWorldMap,
-    getSkillMap
+    getSkillMap,
+    getCharacterDetails,
+    getOutfitDetails,
+    getMemberMap,
+    filterOnline
 }

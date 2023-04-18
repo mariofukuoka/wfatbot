@@ -14,7 +14,7 @@ const boxDeathStyle = 'background-color: #990000; color: #ff5959;';
 const getTimeline = () => {
 
   //const characters = ['BlackAdlerTR', 'judex23', 'geekFR', 'Airturret']
-  const characters = ['Hanketsu', 'JelzinBOSS', 'Tpyc', 'Com784']
+  const characters = ['NMAxLukas1233NC', 'JEDIxDaltonTR', 'RE4xHoneybadgerStoleMyReaverNC', 'FUxBobsquddleTR']
   const quoteEnclosedCharacters = characters.map(c=>`'${c}'`);
 
   const getOtherRepr = (otherId, other) => {
@@ -337,4 +337,4 @@ const generateReport = () => {
   return outputFilename;
 }
 
-generateReport()
+//generateReport()

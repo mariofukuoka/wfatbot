@@ -1,8 +1,9 @@
 const { serviceId } = require('../config/config.json');
 const WebSocket = require('ws');
-const { getEventMsg, charIdIsValid, timestampToDate } = require('./helper-funcs');
-const { getCharacter } = require('./census-funcs');
+const { charIdIsValid, timestampToDate } = require('./helper-funcs');
+const { getCharacter, getMemberMap, filterOnline } = require('./census-funcs');
 const { 
+  db,
   saveDeathEvent,
   saveVehicleDestroyEvent,
   saveExperienceEvent,
@@ -22,19 +23,113 @@ const {
  const regionMap = require('../api-maps/region-map.json');
  const worldMap = require('../api-maps/world-map.json');
 
+
+
 // global var
+var ws = null;
 var charMap = null;
-const setCharMap = newCharMap => charMap = newCharMap;
+var teamMap = null;
+var trackedIds = null;
+
+const getEventMsg = (eventName, event) => {
+  const involvedTeams = [];
+  ['attackerTeamId', 'teamId', 'otherTeamId'].forEach(teamIdProperty => {
+    if (teamIdProperty in event) involvedTeams.push(teamMap[event[teamIdProperty]].tag);
+  })
+  let msg = `${timestampToDate(event.timestamp)} [${eventName}] [${involvedTeams ? involvedTeams.join('/') : 'no team'}]`;
+  msg += ' '.repeat('PlayerFacilityCapture'.length - eventName.length);
+  if (eventName === 'Death') {
+    msg += `${event.attacker} (${event.attackerFaction} ${event.attackerClass}`;
+    if (event.attackerVehicle) msg += ` in ${event.attackerVehicle}`;
+    msg += `) killed ${event.character} (${event.faction} ${event.class}`;
+    if (event.vehicle) msg += ` in ${event.vehicle}`;
+    msg += `) with ${event.attackerWeapon}`;
+    if (event.headshot) msg += ' (headshot)';
+    msg += ` [${event.continent}]`;
+  } 
+  else if (eventName === 'GainExperience') {
+    msg += `${event.character} (${event.faction} ${event.class}) got ${event.amount}XP for ${event.description}`
+    if (event.other) msg += ` through ${event.other}`;
+    else if (event.otherId > 0) msg += ` through NPC ${event.otherId}`;
+    msg += ` [${event.continent}]`;
+  } 
+  else if (eventName === 'VehicleDestroy') {
+    msg += `${event.attacker} (${event.attackerFaction} ${event.attackerClass}`;
+    if (event.attackerVehicle) msg += ` in ${event.attackerVehicle}`;
+    msg += `) destroyed ${event.character}'s ${event.vehicle} (${event.faction}) with ${event.attackerWeapon} [${event.continent}]`;
+  } 
+  else if (eventName === 'PlayerFacilityCapture') {
+    msg +=  `${event.character} captured ${event.facility} [${event.continent}]`;
+  }
+  else if (eventName === 'PlayerFacilityDefend') {
+    msg += `${event.character} defended ${event.facility} [${event.continent}]`;
+  } 
+  else if (eventName === 'SkillAdded') {
+    msg += `${event.character} unlocked`
+    if (event.name) msg += ` ${event.name} (${event.skillLine}, ${event.skillPoints} points})`; else msg += ` unknown skill (${event.skillId})`;
+    if (event.grantItemId) msg += ` grant item: ${itemMap[event.grantItemId].name} (ID ${event.grantItemId})`;
+    msg += ` [${event.continent}]`;
+  } 
+  else if (eventName === 'ItemAdded') {
+    msg += `${event.character} unlocked`
+    if (event.itemCount) msg += ` ${event.itemCount}`;
+    if (event.name) msg += ` ${event.name} (${event.type}, ${event.category})`; else msg += ` unknown item (${event.itemId})`;
+    if (event.itemId in itemMap && itemMap[event.itemId].parentItems.length > 0) msg += ` for ${itemMap[itemMap[event.itemId].parentItems[0]].name}`;
+    //if (event.itemId in itemMap && itemMap[event.itemId].parentItems.length > 0) msg += ` for ${itemMap[event.itemId].parentItems.map(parentId => itemMap[parentId].name)}`;
+    if (event.context) msg += ` (context: ${event.context})`;
+    msg += ` [${event.continent}]`;
+  } 
+  else if (eventName === 'PlayerLogin') {
+    msg += `${event.character} logged in`;
+  } else if (eventName === 'PlayerLogout') {
+    msg += `${event.character} logged out`;
+  } else return 'unknown event';
+  msg += ` [${event.server}]`
+  return msg;
+}
+
+const getCharAndTeamMap = async () => {
+  
+  let charMap = {};
+  
+  const outfits = db.prepare(`SELECT outfitTag AS tag, teamId FROM trackedOutfits`).all();
+  const memberPromises = outfits.map( outfit => getMemberMap(outfit.tag, outfit.teamId));
+  const memberMaps = await Promise.all(memberPromises);
+  memberMaps.forEach( memberMap => {
+    charMap = Object.assign(charMap, memberMap);
+  });
+
+  const characters = db.prepare(`SELECT characterId AS id, character AS name, teamId FROM trackedCharacters`).all();
+  characters.forEach( char => {
+    charMap[char.id] = { name: char.name, teamId: char.teamId };
+  });
+
+  const teams = db.prepare(`SELECT teamId as id, teamTag as tag FROM teams`).all();
+  const teamMap = {};
+  teams.forEach( team => {
+    teamMap[team.id] = { tag: team.tag, currOnline: new Set() };
+  });
+  const onlineCharIds = await filterOnline(Object.keys(charMap));
+  onlineCharIds.forEach( charId => {
+    if (charId in charMap) {
+      teamMap[ charMap[charId].teamId ].currOnline.add(charId);
+    }
+  });
+  //console.log(teamMap);
+  return [charMap, teamMap];
+}
+
+
 
 const fetchIfMissing = async characterId => {
   if (!charIdIsValid(characterId)) return null;
   else if (characterId in charMap) {
-      return charMap[characterId];
+      return charMap[characterId].name;
   } 
   else { // attempt to fetch from census API
     try {
       newChar = await getCharacter(characterId);
-      if (newChar != null) charMap[characterId] = newChar; // cache new char
+      if (newChar != null) charMap[characterId] = { name: newChar, team: null }; // cache new char
         return newChar;
     } 
     catch (e) {
@@ -49,6 +144,7 @@ const handleDeathPayload= async (p) => {
     timestamp: parseInt(p.timestamp),
     attackerId: p.attacker_character_id,
     attacker: await fetchIfMissing(p.attacker_character_id),
+    attackerTeamId: charMap[p.attacker_character_id]?.teamId || null,
     attackerClass: loadoutMap[p.attacker_loadout_id]?.class,
     attackerFaction: factionMap[p.attacker_team_id],
     attackerVehicle: vehicleMap[p.attacker_vehicle_id],
@@ -56,6 +152,7 @@ const handleDeathPayload= async (p) => {
     attackerWeapon: itemMap[p.attacker_weapon_id]?.name,
     characterId: p.character_id,
     character: await fetchIfMissing(p.character_id),
+    teamId: charMap[p.character_id]?.teamId || null,
     class: loadoutMap[p.character_loadout_id]?.class,
     faction: factionMap[p.team_id],
     vehicle: vehicleMap[p.vehicle_id],
@@ -72,6 +169,7 @@ const handleVehicleDestroyPayload = async (p) => {
     timestamp: parseInt(p.timestamp),
     attackerId: p.attacker_character_id,
     attacker: await fetchIfMissing(p.attacker_character_id),
+    attackerTeamId: charMap[p.attacker_character_id]?.teamId || null,
     attackerClass: loadoutMap[p.attacker_loadout_id]?.class,
     attackerFaction: factionMap[loadoutMap[p.attacker_loadout_id]?.factionId],
     attackerVehicle: vehicleMap[p.attacker_vehicle_id],
@@ -79,6 +177,7 @@ const handleVehicleDestroyPayload = async (p) => {
     attackerWeapon: itemMap[p.attacker_weapon_id]?.name,
     characterId: p.character_id,
     character: await fetchIfMissing(p.character_id),
+    teamId: charMap[p.character_id]?.teamId || null,
     faction: factionMap[p.faction_id],
     vehicle: vehicleMap[p.vehicle_id],
     facilityId: p.facility_id,
@@ -95,10 +194,12 @@ const handleExperiencePayload = async (p) => {
     timestamp: parseInt(p.timestamp),
     characterId: p.character_id,
     character: await fetchIfMissing(p.character_id),
+    teamId: charMap[p.character_id]?.teamId || null,
     class: loadoutMap[p.loadout_id]?.class,
     faction: factionMap[loadoutMap[p.loadout_id]?.factionId],
     otherId: p.other_id,
     other: await fetchIfMissing(p.other_id),
+    otherTeamId: charMap[p.other_id]?.teamId || null,
     experienceId: p.experience_id,
     description: experienceMap[p.experience_id]?.desc, 
     amount: p.amount,
@@ -114,7 +215,8 @@ const handlePlayerFacilityPayload = async (p) => {
   const playerFacilityEvent = {
     timestamp: parseInt(p.timestamp),
     characterId: p.character_id,
-    character: charMap[p.character_id],
+    character: fetchIfMissing(p.character_id),
+    teamId: charMap[p.character_id]?.teamId || null,
     type: p.event_name,
     facilityId: p.facility_id,
     facility: regionMap[p.facility_id],
@@ -131,6 +233,7 @@ const handleSkillAddedPayload = async (p) => {
     timestamp: parseInt(p.timestamp),
     characterId: p.character_id,
     character: await fetchIfMissing(p.character_id),
+    teamId: charMap[p.character_id]?.teamId || null,
     skillId: p.skill_id,
     name: skill?.name,
     skillLine: skill?.skillLine,
@@ -149,6 +252,7 @@ const handleItemAddedPayload = async (p) => {
     timestamp: parseInt(p.timestamp),
     characterId: p.character_id,
     character: await fetchIfMissing(p.character_id),
+    teamId: charMap[p.character_id]?.teamId || null,
     itemId: p.item_id,
     name: item?.name,
     type: item?.type,
@@ -171,16 +275,66 @@ const handlePlayerSessionPayload = async (p) => {
     timestamp: p.timestamp,
     characterId: p.character_id,
     character: await fetchIfMissing(p.character_id),
+    teamId: charMap[p.character_id]?.teamId || null,
     type: p.event_name,
     server: worldMap[p.world_id]
   }
-  console.log(getEventMsg(p.event_name, playerSessionEvent));
-  savePlayerSessionEvent.run(playerSessionEvent);  
+  
+  if (trackedIds.has(p.character_id)) {
+    console.log(getEventMsg(p.event_name, playerSessionEvent));
+    let msg = `Team ${teamMap[charMap[p.character_id].teamId].tag} online count updated from ${teamMap[charMap[p.character_id].teamId].currOnline.size} to `
+    if (p.event_name === 'PlayerLogin') {
+      teamMap[charMap[p.character_id].teamId].currOnline.add(p.character_id);
+    }
+    else {
+      teamMap[charMap[p.character_id].teamId].currOnline.delete(p.character_id);
+    }
+    console.log(msg + `${teamMap[charMap[p.character_id].teamId].currOnline.size}`)
+    savePlayerSessionEvent.run(playerSessionEvent);  
+  }
 }
 
-const startWebsocket = (subscribtion) => {
+const getSubscription = trackedIds => {
+  return {
+    service: 'event',
+    action: 'subscribe',
+    characters: trackedIds,
+    worlds: ['all'],
+    eventNames: [      
+      //...trackedExperienceEvents,
+      'GainExperience',
+      'Death', 
+      'VehicleDestroy', 
+      'PlayerFacilityCapture',
+      'PlayerFacilityDefend',
+      'ItemAdded',
+      'SkillAdded',
+      'PlayerLogin',
+      'PlayerLogout'
+    ],
+    logicalAndCharactersWithWorlds:true
+  }
+}
+
+const startWebsocket = async () => {
+  [charMap, teamMap] = await getCharAndTeamMap();
+  console.log('Character & team map acquired.');
+  //console.log(charMap, teamMap)
+  const trackedPerTeam = Object.values(charMap).reduce((acc, c) => {
+    console.log(c)
+    acc[c.teamId] = acc[c.teamId] + 1 || 1;
+    return acc;
+  }, {});
+  console.log(trackedPerTeam)
+  Object.entries(trackedPerTeam).forEach( ([teamId, count]) => {
+    console.log(`[${teamMap[teamId].tag}]\ttracked: ${count}\tonline: ${teamMap[teamId].currOnline.size}`)
+  })
+  trackedIds = new Set(Object.keys(charMap));
+
+  const subscription = getSubscription(Array.from(trackedIds));
+
   // Websocket
-  let ws = new WebSocket(`wss://push.planetside2.com/streaming?environment=ps2&service-id=s:${serviceId}`);
+  ws = new WebSocket(`wss://push.planetside2.com/streaming?environment=ps2&service-id=s:${serviceId}`);
 
   // Websocket subscription JSON
 
@@ -231,28 +385,32 @@ const startWebsocket = (subscribtion) => {
     else if (data.type === 'heartbeat') return;
     else {
       const timestamp = Math.floor(Date.now() / 1000);
-      let msg = `[${timestampToDate(timestamp)}] [SERVER] ${JSON.stringify(data)}`;
+      let msg = `${timestampToDate(timestamp)} [SERVER] ${JSON.stringify(data)}`;
       console.log(msg);
     }
   });
   ws.on('error', err => {
     console.log('error:', err);
   });
-  ws.on('close', function close() {
-    console.log('WebSocket disconnected');
+  ws.on('close', (event) => {
+    console.log('WebSocket disconnected', event);
     setTimeout(startWebsocket, 5000);
   });
 }
 
+const closeWebsocket = () => {
+  ws.close();
+}
 
 module.exports = {
   startWebsocket,
-  setCharMap,
   handleDeathPayload,
   handleVehicleDestroyPayload,
   handleExperiencePayload,
   handlePlayerFacilityPayload,
   handleSkillAddedPayload,
   handleItemAddedPayload,
-  handlePlayerSessionPayload
+  handlePlayerSessionPayload,
+  getCharAndTeamMap,
+  closeWebsocket
 }

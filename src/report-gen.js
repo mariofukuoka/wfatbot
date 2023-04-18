@@ -5,7 +5,7 @@ const { db } = require('./database-api');
 const vehicleStatusMap = require('../api-maps/vehicle-activity-events.json');
 const { timestampToDate, generalizeEmpireSpecificName } = require('./helper-funcs');
 
-const outputFilename = '../output/output_report.html'
+const outputFilename = '../output/output-report.html'
 // time axis bin/bucket size in seconds
 const intervalLength = 60;
 // tolerance in seconds for time difference between a character's death and vehicle destruction 
@@ -24,7 +24,7 @@ const getInitialData = (startTimestamp, endTimestamp) => {
   return initialData;
 }
 
-const getClassesOverTime = (startTimestamp, endTimestamp) => {
+const getClassesOverTime = (startTimestamp, endTimestamp, teamId) => {
   const events = db.prepare(
     `SELECT * FROM (
       SELECT timestamp, character, class FROM experienceEvents 
@@ -361,7 +361,7 @@ const generateReport = (startTimestamp, endTimestamp) => {
   return outputFilename;
 }
 
-generateReport(0, Number.MAX_SAFE_INTEGER);
+//generateReport(0, Number.MAX_SAFE_INTEGER);
 
 module.exports = {
   generateReport
