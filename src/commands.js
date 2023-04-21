@@ -2,6 +2,9 @@ const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { db, addTrackedCharacter, addTrackedOutfit, addTeam } = require('./database-api');
 const { getCharacterDetails, getOutfitDetails } = require('./census-funcs');
 const { closeWebsocket } = require('./event-handler');
+const { generateTimeline } = require('./timeline-gen');
+const { generateReport } = require('./report-gen');
+const { InvalidDateFormatError, assertValidDateFormat, timestampToInputDateFormat, inputDateFormatToTimestamp } = require('./helper-funcs');
 
 const sanitizedWord = /^[a-zA-Z0-9]*$/;
 const sanitizedSentence = /^[a-zA-Z0-9\s.,;:'()?!]+$/i;
@@ -70,10 +73,10 @@ module.exports = {
                           .setDescription('Outfit tag')
                           .setRequired(true))),
     execute: async interaction => {
-      await interaction.reply('Working...');
+      await interaction.deferReply();
       const teamTag = interaction.options.getString('team_tag');
       assertSanitizedInput(teamTag);
-      const teamId = db.prepare(`SELECT teamId FROM teams WHERE teamTag LIKE '${teamTag}%'`).get()?.teamId;
+      const teamId = db.prepare(`SELECT teamId FROM teams WHERE teamTag LIKE '${teamTag}'`).get()?.teamId;
       
       if (!teamId) {
         await interaction.editReply(`Error: no such team \`${teamTag}\``);
@@ -120,7 +123,7 @@ module.exports = {
               msg += `\`${cd.character}\` is already assigned to a team\n`;
             }
             else {
-              //console.log(e, cd);
+              console.log(e.name, e.message);
               failedCount += 1;
             }
           }
@@ -198,7 +201,7 @@ module.exports = {
                         .setRequired(true)
                         .setAutocomplete(true))),
     execute: async interaction => {
-      await interaction.reply('Working...');
+      await interaction.deferReply();
       if (interaction.options.getSubcommand() === 'character') {
         try {
           const charToRemove = interaction.options.getString('character_name');
@@ -253,7 +256,7 @@ module.exports = {
           const characters = db.prepare(
             `SELECT character, teams.teamTag FROM trackedCharacters 
             INNER JOIN teams ON teams.teamId = trackedCharacters.teamId 
-            WHERE character LIKE '${focusedValue}%'
+            WHERE character LIKE '%${focusedValue}%'
             ORDER BY character ASC`).all();
           const filtered = characters.slice(0, 25).map(entry => ({name: `${entry.character} (${entry.teamTag})`, value: entry.character}));
           await interaction.respond(filtered);
@@ -288,7 +291,7 @@ module.exports = {
               .setDescription('Full team name')
               .setRequired(true)),
     execute: async interaction => {
-      await interaction.reply('Working...');
+      await interaction.deferReply();
       const teamTag = interaction.options.getString('team_tag');
       const teamName = interaction.options.getString('full_name');
       try {
@@ -318,7 +321,7 @@ module.exports = {
               .setRequired(true)
               .setAutocomplete(true)),
     execute: async interaction => {
-      await interaction.reply('Working...');
+      await interaction.deferReply();
       try {
         const teamTag = interaction.options.getString('team_tag');
         assertSanitizedInput(teamTag);
@@ -337,8 +340,8 @@ module.exports = {
     },
     autocomplete: async interaction => {
       const focusedValue = interaction.options.getFocused();
-      assertSanitizedInput(focusedValue);
       try {
+        assertSanitizedInput(focusedValue);
         const teams = db.prepare(
           `SELECT teamTag FROM teams 
           WHERE teamTag LIKE '${focusedValue}%'
@@ -435,6 +438,179 @@ module.exports = {
     execute: async interaction => {
       closeWebsocket(); // will restart on its own
       await interaction.reply('Tracking restarted');
+    }
+  },
+  timeline: {
+    data: new SlashCommandBuilder()
+      .setName('timeline')
+      .setDescription('Generate event timeline for specified characters')
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .setDMPermission(false)
+      .addStringOption(option=>
+        option.setName('character_names')
+              .setDescription('Character names separated by space')
+              .setRequired(true)
+              .setAutocomplete(true))
+      .addStringOption(option=>
+        option.setName('start_time')
+              .setDescription('Start time in "YYMMDD HH:MM"')
+              .setRequired(true)
+              .setAutocomplete(true))
+      .addIntegerOption(option=>
+        option.setName('length')
+              .setDescription('Timeline length in minutes')
+              .setRequired(true)),
+    execute: async interaction => {
+      await interaction.deferReply();
+      const charNames = interaction.options.getString('character_names').split(' ');
+      try {
+        charNames.forEach(name=>assertSanitizedInput(name));
+        const startTime = interaction.options.getString('start_time');
+        assertValidDateFormat(startTime);
+        const length = interaction.options.getInteger('length');
+        if (length < 0 || length > 60*24) throw new InvalidInputError(); // reject less than 0 or more than day
+        const timelineFile = await generateTimeline(charNames, startTime, length);
+        await interaction.editReply({content: `Event timeline for \`${charNames.join(', ')}\` starting at <t:${inputDateFormatToTimestamp(startTime)}:F> (${length} min)`, files: [timelineFile]});
+      } catch (e) {
+        console.log('Exception caught:', e.name, e.message);
+        if (e instanceof InvalidInputError) {
+          await interaction.editReply("Error: invalid input argument");
+        } else if (e instanceof InvalidDateFormatError) {
+          await interaction.editReply("Error: invalid date format");
+        } else {
+          await interaction.editReply("Error: couldn't execute function");
+        }        
+        return;
+      }
+    },
+    autocomplete: async interaction => {
+      const focusedOption = interaction.options.getFocused(true);
+      const focusedValue = focusedOption.value;
+      if (focusedOption.name === 'character_names') {
+        try {
+          let charNames = focusedValue.split(' ');
+          //console.log(charNames);
+          const charSet = new Set(charNames);
+          charNames = charNames.filter(charName => sanitizedWord.test(charName));
+          let charSuggestions = db.prepare(`SELECT character AS name FROM trackedCharacters WHERE character LIKE '%${charNames.at(-1)}%'`).all();
+          let showNext = false;
+          if (charSuggestions && charSuggestions.at(-1).name === charNames.at(-1)) {
+            charSuggestions = db.prepare(`SELECT character AS name FROM trackedCharacters`).all();
+            showNext = true;
+          }
+          let filtered = charSuggestions
+            .filter(suggestion => !charSet.has(suggestion.name)) // filter duplicates
+            .slice(0, 25) // trim to allowed autocomplete length
+            .map(suggestion => `${[...(showNext ? charNames : charNames.slice(0, -1)), suggestion.name].join(' ')}`); // map to strings of current focusedValue + the suggestion
+          filtered = filtered.map(autocompleteStr => ({name:autocompleteStr, value:autocompleteStr}));
+          await interaction.respond(filtered);
+        } catch (e) {
+          console.log('timeline autocomplete error:', e.name, e.message);
+          await interaction.respond([]);
+        }
+      } else if (focusedOption.name === 'start_time') {
+        try {
+          const charNames = interaction.options.getString('character_names').split(' ');
+          charNames.forEach(c => assertSanitizedInput(c));
+          console.log(charNames);
+          const intervals = db.prepare(
+            `SELECT CAST(timestamp/3600 AS INT)*3600 AS interval, COUNT(DISTINCT character) AS charCount 
+            FROM experienceEvents WHERE character IN (${charNames.map(c=>`'${c}'`)}) GROUP BY interval ORDER BY interval DESC`).all();
+          const filtered = intervals
+            .slice(0, 25)
+            .map(entry => ({name: `${timestampToInputDateFormat(entry.interval)} (${entry.charCount} players active)`, value: timestampToInputDateFormat(entry.interval)}));
+            console.log(filtered.map(f=>f.value));
+            await interaction.respond(filtered);
+        } catch (e) {
+          console.log(e.name, e.message);
+          await interaction.respond([]);
+        }
+      }
+    }
+  },
+  session_report: {
+    data: new SlashCommandBuilder()
+      .setName('session_report')
+      .setDescription('Generate session report for specified team')
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .setDMPermission(false)
+      .addStringOption(option=>
+        option.setName('team_tag')
+              .setDescription('Team tag')
+              .setRequired(true)
+              .setAutocomplete(true))
+      .addStringOption(option=>
+        option.setName('start_time')
+              .setDescription('Session start time in "YYMMDD HH:MM"')
+              .setRequired(true)
+              .setAutocomplete(true))
+      .addIntegerOption(option=>
+        option.setName('length')
+              .setDescription('Session length in minutes')
+              .setRequired(true)),
+    execute: async interaction => {
+      await interaction.deferReply();
+      const teamTag = interaction.options.getString('team_tag');
+      try {
+        assertSanitizedInput(teamTag);
+        const startTime = interaction.options.getString('start_time');
+        assertValidDateFormat(startTime);
+        const length = interaction.options.getInteger('length');
+        if (length < 0 || length > 60*24) throw new InvalidInputError(); // reject less than 0 or more than day
+        const reportFile = await generateReport(teamTag, startTime, length);
+        await interaction.editReply({content: `Session report for \`${teamTag}\` starting at <t:${inputDateFormatToTimestamp(startTime)}:F> (${length} min)`, files: [reportFile]});
+      } catch (e) {
+        console.log('Exception caught:', e.name, e.message, e);
+        if (e instanceof InvalidInputError) {
+          await interaction.editReply("Error: invalid input argument");
+        } else if (e instanceof InvalidDateFormatError) {
+          await interaction.editReply("Error: invalid date format");
+        } else {
+          await interaction.editReply("Error: couldn't execute function");
+        }        
+        return;
+      }
+    },
+    autocomplete: async interaction => {
+      const focusedOption = interaction.options.getFocused(true);
+      const focusedValue = focusedOption.value;
+      if (focusedOption.name === 'team_tag') {
+        try {
+          assertSanitizedInput(focusedValue);
+          const teams = db.prepare(
+            `SELECT teamTag FROM teams 
+            WHERE teamTag LIKE '${focusedValue}%'
+            ORDER BY teamTag ASC`).all();
+          const filtered = teams.slice(0, 25).map(entry => ({name: entry.teamTag, value: entry.teamTag}));
+          await interaction.respond(filtered);
+
+        } catch (e) {
+          console.log('Exception caught:', e.name, e.message);
+          await interaction.respond([]);
+        }
+      }
+      else if (focusedOption.name === 'start_time') {
+        try {
+          const teamTag = interaction.options.getString('team_tag');
+          const intervals = db.prepare(
+            `SELECT CAST(timestamp/3600 AS INT)*3600 AS interval, COUNT(DISTINCT character) AS charCount FROM 
+            (SELECT timestamp, character FROM experienceEvents 
+            JOIN teams ON teams.teamId=experienceEvents.teamId
+            WHERE teamTag LIKE '${teamTag}'
+            UNION
+            SELECT timestamp, other FROM experienceEvents 
+            JOIN teams ON teams.teamId=experienceEvents.otherTeamId
+            WHERE teamTag LIKE '${teamTag}')
+            GROUP BY interval ORDER BY interval DESC`).all();
+          const filtered = intervals
+            .slice(0, 25)
+            .map(entry => ({name: `${timestampToInputDateFormat(entry.interval)} (${entry.charCount} players active)`, value: timestampToInputDateFormat(entry.interval)}));
+            await interaction.respond(filtered);
+        } catch (e) {
+          console.log('Exception caught:', e.name, e.message, e);
+          await interaction.respond([]);
+        }
+      }
     }
   }
 }

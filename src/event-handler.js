@@ -31,12 +31,16 @@ var charMap = null;
 var teamMap = null;
 var trackedIds = null;
 
+const vrZoneIds = new Set('95', '96', '97', '98');
+
+// todo: make a command to read curr teamMap and charMap counts
+
 const getEventMsg = (eventName, event) => {
   const involvedTeams = [];
   ['attackerTeamId', 'teamId', 'otherTeamId'].forEach(teamIdProperty => {
-    if (teamIdProperty in event) involvedTeams.push(teamMap[event[teamIdProperty]].tag);
-  })
-  let msg = `${timestampToDate(event.timestamp)} [${eventName}] [${involvedTeams ? involvedTeams.join('/') : 'no team'}]`;
+    if (teamIdProperty in event) involvedTeams.push(teamMap[event[teamIdProperty]]?.tag || '?');
+  });
+  let msg = `${timestampToDate(event.timestamp)} [${eventName}] [${involvedTeams.join('/')}]`;
   msg += ' '.repeat('PlayerFacilityCapture'.length - eventName.length);
   if (eventName === 'Death') {
     msg += `${event.attacker} (${event.attackerFaction} ${event.attackerClass}`;
@@ -215,7 +219,7 @@ const handlePlayerFacilityPayload = async (p) => {
   const playerFacilityEvent = {
     timestamp: parseInt(p.timestamp),
     characterId: p.character_id,
-    character: fetchIfMissing(p.character_id),
+    character: await fetchIfMissing(p.character_id),
     teamId: charMap[p.character_id]?.teamId || null,
     type: p.event_name,
     facilityId: p.facility_id,
@@ -279,9 +283,10 @@ const handlePlayerSessionPayload = async (p) => {
     type: p.event_name,
     server: worldMap[p.world_id]
   }
-  
+  console.log(getEventMsg(p.event_name, playerSessionEvent));
+  savePlayerSessionEvent.run(playerSessionEvent);  
   if (trackedIds.has(p.character_id)) {
-    console.log(getEventMsg(p.event_name, playerSessionEvent));
+    
     let msg = `Team ${teamMap[charMap[p.character_id].teamId].tag} online count updated from ${teamMap[charMap[p.character_id].teamId].currOnline.size} to `
     if (p.event_name === 'PlayerLogin') {
       teamMap[charMap[p.character_id].teamId].currOnline.add(p.character_id);
@@ -290,7 +295,6 @@ const handlePlayerSessionPayload = async (p) => {
       teamMap[charMap[p.character_id].teamId].currOnline.delete(p.character_id);
     }
     console.log(msg + `${teamMap[charMap[p.character_id].teamId].currOnline.size}`)
-    savePlayerSessionEvent.run(playerSessionEvent);  
   }
 }
 
@@ -298,8 +302,8 @@ const getSubscription = trackedIds => {
   return {
     service: 'event',
     action: 'subscribe',
-    characters: trackedIds,
-    worlds: ['all'],
+    characters: ['all'],
+    worlds: ['19'], // jaeger
     eventNames: [      
       //...trackedExperienceEvents,
       'GainExperience',
@@ -320,6 +324,7 @@ const startWebsocket = async () => {
   [charMap, teamMap] = await getCharAndTeamMap();
   console.log('Character & team map acquired.');
   //console.log(charMap, teamMap)
+  let msg = '';
   const trackedPerTeam = Object.values(charMap).reduce((acc, c) => {
     console.log(c)
     acc[c.teamId] = acc[c.teamId] + 1 || 1;
@@ -327,8 +332,9 @@ const startWebsocket = async () => {
   }, {});
   console.log(trackedPerTeam)
   Object.entries(trackedPerTeam).forEach( ([teamId, count]) => {
-    console.log(`[${teamMap[teamId].tag}]\ttracked: ${count}\tonline: ${teamMap[teamId].currOnline.size}`)
+    msg += `[${teamMap[teamId].tag}]\ttracked: ${count}\tonline: ${teamMap[teamId].currOnline.size}\n`;
   })
+  console.log(msg);
   trackedIds = new Set(Object.keys(charMap));
 
   const subscription = getSubscription(Array.from(trackedIds));
@@ -350,7 +356,7 @@ const startWebsocket = async () => {
     const data = JSON.parse(message);
     if (data.type === 'serviceMessage') {
       const p = data.payload;
-      if ('attacker_character_id' in p && p.attacker_character_id === '0') { // filter out tutorial events
+      if (('attacker_character_id' in p && p.attacker_character_id === '0') || vrZoneIds.has(p?.zone_id)) { // filter out tutorial and vr events
         //console.log('Event from tutorial zone', p);
         return;
       }

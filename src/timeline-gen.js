@@ -3,18 +3,24 @@ const { JSDOM } = require('jsdom');
 const { db } = require('./database-api');
 const fs = require('fs');
 const itemMap = require('../api-maps/item-map.json');
+const { assertValidDateFormat, inputDateFormatToTimestamp, inputDateToFilenameFormat } = require('./helper-funcs');
 
-const outputFilename = '../output/output-timeline.html'
+
 
 const boxHightlightStyle = 'border-color: gold; color: gold;'
 const pointHightlightStyle = 'color: #ffd700;'
 const boxKillStyle = 'background-color: #25744d; color: #33CC33;';
 const boxDeathStyle = 'background-color: #990000; color: #ff5959;';
 
-const getTimeline = () => {
+function toDate(timestamp) {
+  const dateStr = new Date(timestamp*1000).toJSON();
+  const formattedDateStr = `${dateStr.slice(2, 10)} ${dateStr.slice(11, 16)}`;
+  return formattedDateStr;
+}
 
-  //const characters = ['BlackAdlerTR', 'judex23', 'geekFR', 'Airturret']
-  const characters = ['NMAxLukas1233NC', 'JEDIxDaltonTR', 'RE4xHoneybadgerStoleMyReaverNC', 'FUxBobsquddleTR']
+const getTimeline = (characters, startTimestamp, endTimestamp) => {
+  
+  //console.log(startTimestamp, toDate(startTimestamp), endTimestamp, toDate(endTimestamp));
   const quoteEnclosedCharacters = characters.map(c=>`'${c}'`);
 
   const getOtherRepr = (otherId, other) => {
@@ -65,7 +71,8 @@ const getTimeline = () => {
   const classCheckpoints = [];
   const deathEvents = db.prepare(
     `SELECT * FROM deathEvents
-    WHERE character IN (${quoteEnclosedCharacters}) OR attacker in (${quoteEnclosedCharacters})`
+    WHERE (character IN (${quoteEnclosedCharacters}) OR attacker in (${quoteEnclosedCharacters}))
+    AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}`
     ).all();
   //console.log(events);
   const deathItems = [];
@@ -111,7 +118,8 @@ const getTimeline = () => {
 
   const vehicleDestroyEvents = db.prepare(
     `SELECT * FROM vehicleDestroyEvents
-    WHERE character IN (${quoteEnclosedCharacters}) OR attacker in (${quoteEnclosedCharacters})`
+    WHERE (character IN (${quoteEnclosedCharacters}) OR attacker in (${quoteEnclosedCharacters}))
+    AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}`
     ).all();
   vehicleDestroyEvents.forEach( event => {
     classCheckpoints.push({timestamp: event.timestamp, character: event.attacker, class: event.attackerClass});
@@ -153,6 +161,7 @@ const getTimeline = () => {
   const experienceEvents = db.prepare(
     `SELECT id, timestamp, character, otherId, other, description, class, amount FROM experienceEvents
     WHERE character IN (${quoteEnclosedCharacters})
+    AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}
     ORDER BY timestamp ASC`
     ).all();
   const experienceItems = [];
@@ -187,7 +196,8 @@ const getTimeline = () => {
 
   const playerSessionEvents = db.prepare(
     `SELECT * FROM playerSessionEvents
-    WHERE character IN (${quoteEnclosedCharacters})`
+    WHERE character IN (${quoteEnclosedCharacters})
+    AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}`
     ).all();
   const playerSessionItems = [];
   playerSessionEvents.forEach( event => {
@@ -236,7 +246,8 @@ const getTimeline = () => {
 
   const playerFacilityEvents = db.prepare(
     `SELECT timestamp, character, type, facility, facilityId, continent FROM playerFacilityEvents
-    WHERE character IN (${quoteEnclosedCharacters})`
+    WHERE character IN (${quoteEnclosedCharacters})
+    AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}`
     ).all();
   const playerFacilityItems = [];
   playerFacilityEvents.forEach( event => {
@@ -254,7 +265,8 @@ const getTimeline = () => {
 
   const skillAddedEvents = db.prepare(
     `SELECT * FROM skillAddedEvents
-    WHERE character IN (${quoteEnclosedCharacters})`
+    WHERE character IN (${quoteEnclosedCharacters})
+    AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}`
     ).all();
   const skillAddedItems = [];
   skillAddedEvents.forEach( event => {
@@ -272,7 +284,8 @@ const getTimeline = () => {
 
   const itemAddedEvents = db.prepare(
     `SELECT * FROM itemAddedEvents
-    WHERE character IN (${quoteEnclosedCharacters})`
+    WHERE character IN (${quoteEnclosedCharacters})
+    AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}`
     ).all();
   const itemAddedItems = [];
   itemAddedEvents.forEach( event => {
@@ -318,23 +331,32 @@ const getTimeline = () => {
   return [items, groups]
 }
 
-const generateReport = () => {
-  fs.readFile('../resources/timeline-template.html', 'utf-8', (err, html) => {
-    if (err) throw err;
-    const dom = new JSDOM(html);
-    const document = dom.window.document;
-    
-    const [items, groups] = getTimeline();
-    const timelineElement = document.getElementById('timeline');
-    timelineElement.setAttribute('items', JSON.stringify(items));
-    timelineElement.setAttribute('groups', JSON.stringify(groups));
+const generateTimeline = async (characters, startTime, length) => {
+  assertValidDateFormat(startTime);
+  //YY-MM-DD hh:mm
+  const startTimestamp = inputDateFormatToTimestamp(startTime);
+  const endTimestamp = startTimestamp + length*60;
+  const charCountLimit = 6;
+  const charListStr = characters.length > charCountLimit 
+    ? `${characters.slice(0, charCountLimit).join('-')}+${characters.length-charCountLimit}-more` 
+    : characters.join('-');
+  const outputFilename = `../output/timeline-${inputDateToFilenameFormat(startTime)}-${length}min-${charListStr}.html`
 
-    fs.writeFile(outputFilename, dom.serialize(), (err) => {
-      if (err) throw err;
-      console.log(`HTML saved to ${outputFilename}`);
-    });
-  });
+  const html = await fs.promises.readFile('../resources/timeline-template.html', 'utf-8');
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+
+  const [items, groups] = getTimeline(characters, startTimestamp, endTimestamp);
+  const timelineElement = document.getElementById('timeline');
+  timelineElement.setAttribute('items', JSON.stringify(items));
+  timelineElement.setAttribute('groups', JSON.stringify(groups));
+
+  await fs.promises.writeFile(outputFilename, dom.serialize());
+
+  console.log(`HTML saved to ${outputFilename}`);
   return outputFilename;
 }
 
-//generateReport()
+module.exports = {
+  generateTimeline
+}

@@ -26,14 +26,16 @@
             options: {
                 scales: {
                     x: {
-                        type: 'time',
+                        type: 'time',        
                         time: {
-                            parser: 'YYYY-MM-DD HH:mm:ss',
-                            tooltipFormat: 'll HH:mm:ss',
-                            unit: 'second',
-                            displayFormats: {
-                                second: 'HH:mm:ss'
-                            }
+                        unit: 'minute',
+                        displayFormats: {
+                            minute: 'HH:mm'
+                        },
+                        tooltipFormat: 'HH:mm'
+                        },
+                        scaleLabel: {
+                        labelString: 'Timestamp'
                         }
                     },
                     y: {

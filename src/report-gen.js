@@ -3,7 +3,8 @@ const louvain = require('louvain');
 const { JSDOM } = require('jsdom');
 const { db } = require('./database-api');
 const vehicleStatusMap = require('../api-maps/vehicle-activity-events.json');
-const { timestampToDate, generalizeEmpireSpecificName } = require('./helper-funcs');
+const { generalizeEmpireSpecificName, assertValidDateFormat, inputDateToFilenameFormat, inputDateFormatToTimestamp } = require('./helper-funcs');
+const { start } = require('repl');
 
 const outputFilename = '../output/output-report.html'
 // time axis bin/bucket size in seconds
@@ -24,19 +25,21 @@ const getInitialData = (startTimestamp, endTimestamp) => {
   return initialData;
 }
 
-const getClassesOverTime = (startTimestamp, endTimestamp, teamId) => {
+const getClassesOverTime = (startTimestamp, endTimestamp, teamTag) => {
   const events = db.prepare(
-    `SELECT * FROM (
-      SELECT timestamp, character, class FROM experienceEvents 
+    `SELECT timestamp, character, class, teamTag FROM (
+      SELECT timestamp, character, class, teamId FROM experienceEvents 
       UNION
-      SELECT timestamp, character, type FROM playerSessionEvents
+      SELECT timestamp, character, type as class, teamId FROM playerSessionEvents
       WHERE type LIKE 'PlayerLogout'
     ) AS events
+    JOIN teams ON teams.teamId=events.teamId
     WHERE timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}
+    AND teamTag LIKE '${teamTag}'
     ORDER BY timestamp ASC`
   ).all();
-  startTimestamp = events.at(0).timestamp;
-  endTimestamp = events.at(-1).timestamp;
+  //startTimestamp = events.at(0).timestamp;
+  //endTimestamp = events.at(-1).timestamp;
   const initialData = getInitialData(startTimestamp, endTimestamp);
   let classesOverTime = {
     'Light Assault': structuredClone(initialData),
@@ -69,22 +72,24 @@ const getClassesOverTime = (startTimestamp, endTimestamp, teamId) => {
     Object.entries(classesOverTime[class_]).forEach(([interval, count]) => {
       runningTotal += count;
       //dataPoints.push({interval: timestampToDate(interval), count: runningTotal});
-      dataPoints.push({ x: timestampToDate(interval), y: runningTotal });
+      dataPoints.push({ x: interval*1000, y: runningTotal });
     });
     classesOverTime[class_] = dataPoints;
   }
   return classesOverTime;
 }
 
-const getVehiclesOverTime = (startTimestamp, endTimestamp) => {
+const getVehiclesOverTime = (startTimestamp, endTimestamp, teamTag) => {
   const events = db.prepare(
-    `SELECT timestamp, otherId, experienceId FROM experienceEvents 
+    `SELECT timestamp, otherId, experienceId, teamTag FROM experienceEvents
+    JOIN teams ON teams.teamId=experienceEvents.teamId 
     WHERE timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}
+    AND teamTag LIKE '${teamTag}'
     ORDER BY timestamp ASC`
   ).all();
 
-  startTimestamp = events.at(0).timestamp;
-  endTimestamp = events.at(-1).timestamp;
+  //startTimestamp = events.at(0).timestamp;
+  //endTimestamp = events.at(-1).timestamp;
   const initialData = getInitialData(startTimestamp, endTimestamp);
   const vehicles = [...new Set(Object.values(vehicleStatusMap).map(o => o.vehicle))];
   const vehiclesOverTime = vehicles.reduce((acc, vehicle) => {
@@ -123,7 +128,7 @@ const getVehiclesOverTime = (startTimestamp, endTimestamp) => {
     Object.entries(vehiclesOverTime[vehicle]).forEach(([interval, count]) => {
       runningTotal += count;
       //dataPoints.push({interval: timestampToDate(interval), count: runningTotal});
-      dataPoints.push({ x: timestampToDate(interval), y: runningTotal });
+      dataPoints.push({ x: interval*1000, y: runningTotal });
     });
     vehiclesOverTime[vehicle] = dataPoints;
   }
@@ -151,19 +156,22 @@ const getInteractionType = (attackerVehicle, victimVehicle) => {
   return [getVehicleType(attackerVehicle), getVehicleType(victimVehicle)].sort((a, b) => typePriority[a] - typePriority[b]).join(' vs ');
 }
 
-const getInteractionsOverTime = (startTimestamp, endTimestamp) => {
+const getInteractionsOverTime = (startTimestamp, endTimestamp, teamTag) => {
   const events = db.prepare(
-    `SELECT * FROM (
-      SELECT timestamp, attackerVehicle, vehicle, character, 'VehicleDestroy' AS type FROM vehicleDestroyEvents
+    `SELECT timestamp, attackerVehicle, vehicle, character, type, t1.teamTag as attackerTeamTag, t2.teamTag as teamTag FROM (
+      SELECT timestamp, attackerVehicle, vehicle, character, attackerTeamId, teamId, 'VehicleDestroy' AS type FROM vehicleDestroyEvents
       UNION
-      SELECT timestamp, attackerVehicle, NULL AS vehicle, character, 'Death' as type FROM deathEvents
+      SELECT timestamp, attackerVehicle, NULL AS vehicle, character, attackerTeamId, teamId, 'Death' as type FROM deathEvents
     ) AS events
-    WHERE timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}
+    JOIN teams t1 ON t1.teamId=events.teamId
+    JOIN teams t2 ON t2.teamId=events.attackerTeamId
+    WHERE (t1.teamTag LIKE '${teamTag}' OR t2.teamTag LIKE '${teamTag}')
+    AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}
     ORDER BY timestamp ASC`
   ).all();
 
-  startTimestamp = events.at(0).timestamp;
-  endTimestamp = events.at(-1).timestamp;
+  //startTimestamp = events.at(0).timestamp;
+  //endTimestamp = events.at(-1).timestamp;
   const initialData = getInitialData(startTimestamp, endTimestamp);
   const interactionsOverTime = {
     'Infantry vs Infantry': structuredClone(initialData),
@@ -191,7 +199,7 @@ const getInteractionsOverTime = (startTimestamp, endTimestamp) => {
     const dataPoints = [];
     Object.entries(interactionsOverTime[interaction]).forEach(([interval, count]) => {
       //dataPoints.push({interval: timestampToDate(interval), count: count});
-      dataPoints.push({ x: timestampToDate(interval), y: count });
+      dataPoints.push({ x: interval*1000, y: count });
     });
     interactionsOverTime[interaction] = dataPoints;
   }
@@ -199,17 +207,19 @@ const getInteractionsOverTime = (startTimestamp, endTimestamp) => {
 }
 
 
-const getNodesAndEdgesFromEvents = (startTimestamp, endTimestamp) => {
+const getNodesAndEdgesFromEvents = (startTimestamp, endTimestamp, teamTag) => {
   squadExperiencesSet = new Set([
     '51', '53', '55', '56', '142', '439'
   ]);
   const events = db.prepare(
     `SELECT timestamp, character, faction, other, experienceId, description, amount FROM experienceEvents
+    JOIN teams t1 ON t1.teamId=experienceEvents.teamId
+    JOIN teams t2 ON t2.teamId=experienceEvents.otherTeamId
     WHERE otherId % 2 = 1
+    AND (t1.teamTag LIKE '${teamTag}' OR t2.teamTag LIKE '${teamTag}')
     AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}
     ORDER BY timestamp ASC`
   ).all();
-  //console.log(events.length)
   const interactions = {'squad': {}, 'other': {}};
   const characterFactions = {};
   events.forEach( event => {
@@ -223,7 +233,7 @@ const getNodesAndEdgesFromEvents = (startTimestamp, endTimestamp) => {
     characterFactions[event.character] = event.faction;
   });
 
-  //console.log(interactions.squad);
+  console.log(interactions);
   const uniqueCharacters = Object.keys(characterFactions);
   const squadEdges = [];
   const otherEdges = [];
@@ -292,12 +302,14 @@ const getLouvainEdgeFormat = (edgeData) => {
   return louvainEdgeData;
 }
 
-const getLouvainParsedNodesAndEdges = (startTimestamp, endTimestamp) => {
-  const [nodeData, edgeData, otherEdgeData, characterFactions] = getNodesAndEdgesFromEvents(startTimestamp, endTimestamp);
+const getLouvainParsedNodesAndEdges = (startTimestamp, endTimestamp, teamTag) => {
+  const [nodeData, edgeData, otherEdgeData, characterFactions] = getNodesAndEdgesFromEvents(startTimestamp, endTimestamp, teamTag);
+  console.log(nodeData.length)
+  console.log(edgeData.length)
   const louvainNodeData = getLouvainNodeFormat(nodeData);
   const louvainEdgeData = getLouvainEdgeFormat(edgeData);
   let community = louvain.jLouvain().nodes(louvainNodeData).edges(louvainEdgeData);
-  let result  = community();
+  let result  = community() || {};
   colorMap = {};
   nsoCommunities = new Set();
   Object.entries(result).forEach( ([char, community]) => {
@@ -326,40 +338,46 @@ const getLouvainParsedNodesAndEdges = (startTimestamp, endTimestamp) => {
   return [nodeData, [...edgeData, ...otherEdgeData]];
 }
 
-const generateReport = (startTimestamp, endTimestamp) => {
-  fs.readFile('../resources/report-template.html', 'utf-8', (err, html) => {
-    if (err) throw err;
-    const dom = new JSDOM(html);
-    const document = dom.window.document;
-    for (let [elementId, chartData] of [
-        ['classesOverTimeChart', getClassesOverTime(startTimestamp, endTimestamp)],
-        ['vehiclesOverTimeChart', getVehiclesOverTime(startTimestamp, endTimestamp)],
-        ['interactionsOverTimeChart', getInteractionsOverTime(startTimestamp, endTimestamp)]
-      ]) {
-      const chartElement = document.getElementById(elementId);
-      datasets = [];
-      for (let key in chartData) {
-        datasets.push({
-          label: key,
-          data: chartData[key],
-          fill: 'stack'
-        });
-      }
-      chartElement.setAttribute('data', JSON.stringify(datasets));
-    }
-    
-    const [nodes, edges] = getLouvainParsedNodesAndEdges(startTimestamp, endTimestamp);
-    const graphElement = document.getElementById('characterInteractionGraph');
-    graphElement.setAttribute('nodes', JSON.stringify(nodes));
-    graphElement.setAttribute('edges', JSON.stringify(edges));
+const generateReport = async (teamTag, startTime, length) => {
+  assertValidDateFormat(startTime);
+  const startTimestamp = inputDateFormatToTimestamp(startTime);
+  const endTimestamp = startTimestamp + length*60;
+  console.log(startTimestamp, endTimestamp)
 
-    fs.writeFile(outputFilename, dom.serialize(), (err) => {
-      if (err) throw err;
-      console.log(`HTML saved to ${outputFilename}`);
-    });
-  });
+  const outputFilename = `../output/session-report-${inputDateToFilenameFormat(startTime)}-${length}min-${teamTag}.html`;
+  
+  const html = await fs.promises.readFile('../resources/report-template.html', 'utf-8');
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+
+  for (let [elementId, chartData] of [
+    ['classesOverTimeChart', getClassesOverTime(startTimestamp, endTimestamp, teamTag)],
+    ['vehiclesOverTimeChart', getVehiclesOverTime(startTimestamp, endTimestamp, teamTag)],
+    ['interactionsOverTimeChart', getInteractionsOverTime(startTimestamp, endTimestamp, teamTag)]
+  ]) {
+    const chartElement = document.getElementById(elementId);
+    datasets = [];
+    for (let key in chartData) {
+      datasets.push({
+        label: key,
+        data: chartData[key],
+        fill: 'stack'
+      });
+    }
+    chartElement.setAttribute('data', JSON.stringify(datasets));
+  }
+
+  const [nodes, edges] = getLouvainParsedNodesAndEdges(startTimestamp, endTimestamp, teamTag);
+  const graphElement = document.getElementById('characterInteractionGraph');
+  graphElement.setAttribute('nodes', JSON.stringify(nodes));
+  graphElement.setAttribute('edges', JSON.stringify(edges));
+
+  await fs.promises.writeFile(outputFilename, dom.serialize());
+
+  console.log(`HTML saved to ${outputFilename}`);
   return outputFilename;
-}
+};
+
 
 //generateReport(0, Number.MAX_SAFE_INTEGER);
 
