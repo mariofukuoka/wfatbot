@@ -1,5 +1,6 @@
 const { serviceId } = require('../config/config.json');
 const WebSocket = require('ws');
+const { worldId } = require('../config/config.json');
 const { charIdIsValid, timestampToDate } = require('./helper-funcs');
 const { getCharacter, getMemberMap, filterOnline } = require('./census-funcs');
 const { 
@@ -303,7 +304,7 @@ const getSubscription = trackedIds => {
     service: 'event',
     action: 'subscribe',
     characters: ['all'],
-    worlds: ['10'], // jaeger
+    worlds: [worldId], // jaeger
     eventNames: [      
       //...trackedExperienceEvents,
       'GainExperience',
@@ -342,14 +343,15 @@ const clearRecentStats = () => {
 const startWebsocket = async () => {
   [charMap, teamMap] = await getCharAndTeamMap();
   console.log('Character & team map acquired.');
+  console.log(`Listening to ${worldMap[worldId]}`);
   //console.log(charMap, teamMap)
   let msg = '';
   const trackedPerTeam = Object.values(charMap).reduce((acc, c) => {
-    console.log(c)
+    //console.log(c)
     acc[c.teamId] = acc[c.teamId] + 1 || 1;
     return acc;
   }, {});
-  console.log(trackedPerTeam)
+  //console.log(trackedPerTeam)
   Object.entries(trackedPerTeam).forEach( ([teamId, count]) => {
     msg += `[${teamMap[teamId].tag}]\ttracked: ${count}\tonline: ${teamMap[teamId].currOnline.size}\n`;
   })
