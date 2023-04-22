@@ -1,5 +1,3 @@
-const itemMap = require('../api-maps/item-map.json');
-
 // valid character ids are odd, npc ids are even
 const charIdIsValid = characterId => characterId.slice(-1) % 2 === 1
 

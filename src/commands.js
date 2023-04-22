@@ -5,14 +5,24 @@ const { closeWebsocket } = require('./event-handler');
 const { generateTimeline } = require('./timeline-gen');
 const { generateReport } = require('./report-gen');
 const { InvalidDateFormatError, assertValidDateFormat, timestampToInputDateFormat, inputDateFormatToTimestamp } = require('./helper-funcs');
+const path = require('path');
+const fs = require('fs');
 
 const sanitizedWord = /^[a-zA-Z0-9]*$/;
 const sanitizedSentence = /^[a-zA-Z0-9\s.,;:'()?!]+$/i;
+const discordFileSizeLimit = 8; //mb
 
 class InvalidInputError extends Error {
   constructor(message) {
     super(message);
     this.name = 'InvalidInputError';
+  }
+}
+
+class FileTooBigError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'FileTooBigError';
   }
 }
 
@@ -470,6 +480,9 @@ module.exports = {
         const length = interaction.options.getInteger('length');
         if (length < 0 || length > 60*24) throw new InvalidInputError(); // reject less than 0 or more than day
         const timelineFile = await generateTimeline(charNames, startTime, length);
+        const stats = await fs.promises.stat(timelineFile);
+        const sizeMb = stats.size / (1024*1024);
+        if (sizeMb > discordFileSizeLimit) throw new FileTooBigError();
         await interaction.editReply({content: `Event timeline for \`${charNames.join(', ')}\` starting at <t:${inputDateFormatToTimestamp(startTime)}:F> (${length} min)`, files: [timelineFile]});
       } catch (e) {
         console.log('Exception caught:', e.name, e.message);
@@ -477,6 +490,8 @@ module.exports = {
           await interaction.editReply("Error: invalid input argument");
         } else if (e instanceof InvalidDateFormatError) {
           await interaction.editReply("Error: invalid date format");
+        } else if (e instanceof FileTooBigError) {
+          await interaction.editReply("Error: resultant file too big to send");
         } else {
           await interaction.editReply("Error: couldn't execute function");
         }        
@@ -558,6 +573,9 @@ module.exports = {
         const length = interaction.options.getInteger('length');
         if (length < 0 || length > 60*24) throw new InvalidInputError(); // reject less than 0 or more than day
         const reportFile = await generateReport(teamTag, startTime, length);
+        const stats = await fs.promises.stat(reportFile);
+        const sizeMb = stats.size / (1024*1024);
+        if (sizeMb > discordFileSizeLimit) throw new FileTooBigError();
         await interaction.editReply({content: `Session report for \`${teamTag}\` starting at <t:${inputDateFormatToTimestamp(startTime)}:F> (${length} min)`, files: [reportFile]});
       } catch (e) {
         console.log('Exception caught:', e.name, e.message, e);
@@ -565,6 +583,8 @@ module.exports = {
           await interaction.editReply("Error: invalid input argument");
         } else if (e instanceof InvalidDateFormatError) {
           await interaction.editReply("Error: invalid date format");
+        } else if (e instanceof FileTooBigError) {
+          await interaction.editReply("Error: resultant file too big to send");
         } else {
           await interaction.editReply("Error: couldn't execute function");
         }        
@@ -609,6 +629,34 @@ module.exports = {
         } catch (e) {
           console.log('Exception caught:', e.name, e.message, e);
           await interaction.respond([]);
+        }
+      }
+    }
+  },
+  create_backup: {
+    data: new SlashCommandBuilder()
+      .setName('create_backup')
+      .setDescription('Manually back-up the database')
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .setDMPermission(false),
+    execute: async interaction => {
+      await interaction.deferReply();
+      try {
+        let dateStr = new Date().toJSON();
+        dateStr = dateStr.slice(0, 10) + '-' + dateStr.slice(11, 16).replace(':', '');
+        const backupLocation = path.join(__dirname, '/../db/backups', `player-events-backup-${dateStr}.db`);
+        db.exec(`VACUUM main INTO '${backupLocation}'`);
+        const stats = await fs.promises.stat(backupLocation);
+        const sizeMb = stats.size / (1024*1024);
+        await interaction.editReply(`Backed up database as \`${path.basename(backupLocation)}\` (${sizeMb.toFixed(2)}mb)`);
+      } catch (e) {
+        console.log('Caught exception:', e.name, e.message);
+        if (e.name === 'SqliteError' && e.code === 'SQLITE_CANTOPEN') {
+          await interaction.editReply("Error: no backup directory");
+        } else if (e.name === 'SqliteError' && e.code === 'SQLITE_ERROR') {
+          await interaction.editReply("Error: backup for this minute already exists");
+        } else {
+          await interaction.editReply("Error: couldn't execute command");
         }
       }
     }
