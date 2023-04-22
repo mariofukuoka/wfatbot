@@ -1,23 +1,12 @@
 
-const { Client, Events, GatewayIntentBits } = require('discord.js');
-const { JSDOM } = require('jsdom');
-const census = require('./census-funcs')
-const dbApi = require('./database-api');
+const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
 const { token } = require('../config/config.json');
-const fs = require('fs');
-const { timestampToDate, getEventMsg, charIdIsValid } = require('./helper-funcs');
 //const trackedExperienceEvents = require('../resources/tracked-experience-events.json');
-const { generateReport } = require('./report-gen');
-const { db } = require('./database-api');
-const {
-  startWebsocket,
-  setCharMap,
-  setTeamMap,
-  getCharAndTeamMap
-} = require('./event-handler');
-
-const worldMap = require('../api-maps/world-map.json');
+const { startWebsocket, clearRecentStats } = require('./event-handler');
 const commands = require('./commands');
+
+const statusUpdatePeriod = 10; // minutes
+
 async function asyncMain() {
 
   // ================================== DISCORD LISTENERS =====================================
@@ -27,6 +16,13 @@ async function asyncMain() {
   // Discord bot setup
   client.on('ready', () => {
     console.log(`Discord: Logged in as ${client.user.tag}!`);
+    setInterval( () => {
+      const recentStats = clearRecentStats();
+      const now = new Date();
+      const statusMsg = 
+        `${recentStats.eventCount} events, ${recentStats.uniquePlayers.size} players during last ${((now.getTime()-recentStats.lastClear)/60000).toFixed(0)} min as of ${now.toTimeString()}`;
+      client.user.setPresence({ activities: [{ name: statusMsg, type: ActivityType.Listening }], status: 'online' });
+    }, 60000*statusUpdatePeriod);
   });
 
   // Command handlers

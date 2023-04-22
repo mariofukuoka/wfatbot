@@ -303,7 +303,7 @@ const getSubscription = trackedIds => {
     service: 'event',
     action: 'subscribe',
     characters: ['all'],
-    worlds: ['19'], // jaeger
+    worlds: ['10'], // jaeger
     eventNames: [      
       //...trackedExperienceEvents,
       'GainExperience',
@@ -318,6 +318,25 @@ const getSubscription = trackedIds => {
     ],
     logicalAndCharactersWithWorlds:true
   }
+}
+
+var recentStats = {
+  uniquePlayers: new Set(),
+  eventCount: 0,
+  lastClear: Date.now()
+}
+
+const updateRecentStats = p => {
+  if (charIdIsValid(p.character_id)) recentStats.uniquePlayers.add(p.character_id);
+  if (p?.attacker_character_id && charIdIsValid(p.attacker_character_id)) recentStats.uniquePlayers.add(p.attacker_character_id);
+  if (p?.other_id && charIdIsValid(p.other_id)) recentStats.uniquePlayers.add(p.other_id);
+  recentStats.eventCount += 1;
+}
+
+const clearRecentStats = () => {
+  const temp = structuredClone(recentStats);
+  recentStats = { uniquePlayers: new Set(), eventCount: 0, lastClear: Date.now() };
+  return temp;
 }
 
 const startWebsocket = async () => {
@@ -360,6 +379,8 @@ const startWebsocket = async () => {
         //console.log('Event from tutorial zone', p);
         return;
       }
+      updateRecentStats(p);
+      
       //console.log(p.event_name);
       try {
         if (p.event_name === 'Death') {
@@ -418,5 +439,6 @@ module.exports = {
   handleItemAddedPayload,
   handlePlayerSessionPayload,
   getCharAndTeamMap,
-  closeWebsocket
+  closeWebsocket,
+  clearRecentStats
 }
