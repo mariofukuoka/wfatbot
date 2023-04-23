@@ -674,33 +674,39 @@ module.exports = {
               .setAutocomplete(true)),
     execute: async interaction => {
       await interaction.deferReply();
-      const teamTag = interaction.options.getString('team_tag');
-      assertSanitizedInput(teamTag);
-      let lsChars = await getLsCharacters(teamTag);
-      lsChars = lsChars.filter(c => (c.name.endsWith('NC') || c.name.endsWith('TR') || c.name.endsWith('VS')) && c.server === 'Jaeger');
-      let alreadyTrackedChars = db.prepare(
-        `SELECT characterId FROM trackedCharacters 
-        JOIN teams ON teams.teamId = trackedCharacters.teamId
-        WHERE teamTag LIKE '${teamTag}' AND character LIKE '${teamTag}x%'`
-        ).all();
-      alreadyTrackedChars = new Set(alreadyTrackedChars.map(c => c.characterId));
-      lsChars = lsChars.filter(c => !alreadyTrackedChars.has(c.characterId));
-      if (lsChars.length > 0) {
-        const embed = new EmbedBuilder()
-          .setTitle(`Found untracked LS characters for team \`${teamTag}\``)
-          .setDescription('PSB-provided characters that are unnacounted for');
-        if (lsChars.length > 50) {
-          embed.setFooter( { text:`+ ${lsChars.length - 50} more`} );
-          lsChars = lsChars.slice(0, 50);
-        }
-        lsChars.sort((a, b) => b.minutesPlayed - a.minutesPlayed);
-        embed.addFields(
-            { name: 'Character', value: lsChars.map(c => c.name).join('\n'), inline: true },
-            { name: 'Last Login', value: lsChars.map(c => `<t:${c.lastLoginTimestamp}:d>`).join('\n'), inline: true },
-            { name: 'Playtime', value: lsChars.map(c => (c.minutesPlayed < 60 ? `${c.minutesPlayed} min` : `${(c.minutesPlayed/60).toFixed(0)} hours`)).join('\n'), inline: true }
-          );
-        await interaction.editReply({ embeds: [embed] });
-      } else await interaction.editReply(`No untracked LS characters found for ${teamTag}`);
+      try {
+        const teamTag = interaction.options.getString('team_tag');
+        assertSanitizedInput(teamTag);
+        let lsChars = await getLsCharacters(teamTag);
+        lsChars = lsChars.filter(c => (c.name.endsWith('NC') || c.name.endsWith('TR') || c.name.endsWith('VS')) && c.server === 'Jaeger');
+        let alreadyTrackedChars = db.prepare(
+          `SELECT characterId FROM trackedCharacters 
+          JOIN teams ON teams.teamId = trackedCharacters.teamId
+          WHERE teamTag LIKE '${teamTag}' AND character LIKE '${teamTag}x%'`
+          ).all();
+        alreadyTrackedChars = new Set(alreadyTrackedChars.map(c => c.characterId));
+        lsChars = lsChars.filter(c => !alreadyTrackedChars.has(c.characterId));
+        if (lsChars.length > 0) {
+          const embed = new EmbedBuilder()
+            .setTitle(`Found untracked LS characters for team \`${teamTag}\``)
+            .setDescription('PSB-provided characters that are unnacounted for');
+          if (lsChars.length > 50) {
+            embed.setFooter( { text:`+ ${lsChars.length - 50} more`} );
+            lsChars = lsChars.slice(0, 50);
+          }
+          lsChars.sort((a, b) => b.minutesPlayed - a.minutesPlayed);
+          embed.addFields(
+              { name: 'Character', value: lsChars.map(c => c.name).join('\n'), inline: true },
+              { name: 'Last Login', value: lsChars.map(c => `<t:${c.lastLoginTimestamp}:d>`).join('\n'), inline: true },
+              { name: 'Playtime', value: lsChars.map(c => (c.minutesPlayed < 60 ? `${c.minutesPlayed} min` : `${(c.minutesPlayed/60).toFixed(0)} hours`)).join('\n'), inline: true }
+            );
+          await interaction.editReply({ embeds: [embed] });
+        } else await interaction.editReply(`No untracked LS characters found for ${teamTag}`);
+      } catch (e) {
+        logCaughtException(e);
+        if (e instanceof InvalidInputError) await interaction.editReply('Error: invalid input argument');
+        else await interaction.editReply("Error: couldn't execute command");
+      }
     },
     autocomplete: async interaction => {
       try {

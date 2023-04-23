@@ -24,7 +24,7 @@ async function getLsCharacters(teamTag) {
       name: char.name.first,
       lastLoginTimestamp: char.times.last_login,
       minutesPlayed: char.times.minutes_played,
-      server: char?.characters_world.world.name.en
+      server: char?.characters_world?.world?.name.en
     })
   })
   return lsChars;
