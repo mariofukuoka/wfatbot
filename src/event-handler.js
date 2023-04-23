@@ -299,7 +299,6 @@ const handlePlayerSessionPayload = async (p) => {
     else {
       teamMap[charMap[p.character_id].teamId].currOnline.delete(p.character_id);
     }
-    console.log(msg + `${teamMap[charMap[p.character_id].teamId].currOnline.size}`)
   }
 }
 
