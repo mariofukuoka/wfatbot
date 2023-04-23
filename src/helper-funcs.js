@@ -1,3 +1,50 @@
+
+const fs = require('fs');
+const { basename } = require('path');
+
+const logCaughtException = (error) => {
+  const dateStr = timestampToDate(Date.now()/1000);
+  console.log(`${dateStr} [EXCEPTION] ${error.name} ${error.message}`);
+}
+
+class FileTooBigError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'FileTooBigError';
+  }
+}
+
+const getFileSizeInMb = async filePath => {
+  const stats = await fs.promises.stat(filePath);
+  return stats.size / (1024*1024);
+}
+
+const discordFileSizeLimit = 8; //mb
+const assertFileSizeWithinDiscordLimit = async filePath => {
+  const sizeMb = await getFileSizeInMb(filePath)
+  if (sizeMb > discordFileSizeLimit) throw new FileTooBigError(`${basename(filePath)} (${sizeMb.toFixed(2)}mb) is over the discord file size limit of ${discordFileSizeLimit}`);
+}
+
+class InvalidInputError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'InvalidInputError';
+  }
+}
+
+const sanitizedWord = /^[a-zA-Z0-9]*$/;
+const isSanitized = word => {
+  return sanitizedWord.test(word);
+}
+const assertSanitizedInput = (input) => {
+  if (!sanitizedWord.test(input)) throw new InvalidInputError(`Invalid characters in ${input}`);
+}
+
+const sanitizedSentence = /^[a-zA-Z0-9\s.,;:'()?!]+$/i;
+const assertSanitizedSentenceInput = (input) => {
+  if (!sanitizedSentence.test(teamName)) throw new InvalidInputError(`Invalid characters in ${input}`);
+}
+
 // valid character ids are odd, npc ids are even
 const charIdIsValid = characterId => characterId.slice(-1) % 2 === 1
 
@@ -5,9 +52,13 @@ const timestampToInputDateFormat = timestamp => {
   // in: timestamp in sec
   // out: YY-MM-DD hh:mm
   const dateStr = new Date(timestamp*1000).toJSON();
-  console.log(dateStr)
   const formattedDateStr = `${dateStr.slice(2, 10)} ${dateStr.slice(11, 16)}`;
   return formattedDateStr;
+}
+
+const currDateAsFilenameFormat = () => {
+  const dateStr = new Date().toJSON();
+  return dateStr.slice(0, 10) + '-' + dateStr.slice(11, 16).replace(':', '');
 }
 
 const inputDateToFilenameFormat = dateStr => {
@@ -63,12 +114,21 @@ function generalizeEmpireSpecificName(vehicleName) {
 }
 
 module.exports = {
+    logCaughtException,
     timestampToDate,
     charIdIsValid,
     randomColorStr,
     generalizeEmpireSpecificName,
     InvalidDateFormatError,
     assertValidDateFormat,
+    InvalidInputError,
+    isSanitized,
+    assertSanitizedInput,
+    assertSanitizedSentenceInput,
+    FileTooBigError,
+    getFileSizeInMb,
+    assertFileSizeWithinDiscordLimit,
+    currDateAsFilenameFormat,
     timestampToInputDateFormat,
     inputDateFormatToTimestamp,
     inputDateToFilenameFormat

@@ -4,54 +4,25 @@ const { getCharacterDetails, getOutfitDetails } = require('./census-funcs');
 const { closeWebsocket } = require('./event-handler');
 const { generateTimeline } = require('./timeline-gen');
 const { generateReport } = require('./report-gen');
-const { InvalidDateFormatError, assertValidDateFormat, timestampToInputDateFormat, inputDateFormatToTimestamp } = require('./helper-funcs');
+const { 
+  logCaughtException,
+  InvalidInputError,
+  isSanitized,
+  assertSanitizedInput,
+  assertSanitizedSentenceInput,
+  FileTooBigError,
+  getFileSizeInMb,
+  assertFileSizeWithinDiscordLimit,
+  InvalidDateFormatError,
+  currDateAsFilenameFormat, 
+  assertValidDateFormat, 
+  timestampToInputDateFormat, 
+  inputDateFormatToTimestamp 
+} = require('./helper-funcs');
 const path = require('path');
-const fs = require('fs');
 
-const sanitizedWord = /^[a-zA-Z0-9]*$/;
-const sanitizedSentence = /^[a-zA-Z0-9\s.,;:'()?!]+$/i;
-const discordFileSizeLimit = 8; //mb
-
-class InvalidInputError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'InvalidInputError';
-  }
-}
-
-class FileTooBigError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'FileTooBigError';
-  }
-}
-
-const assertSanitizedInput = (input) => {
-  if (!sanitizedWord.test(input)) throw new InvalidInputError(`Invalid characters in ${input}`);
-}
 
 module.exports = {
-  /* debug: {
-    data: new SlashCommandBuilder()
-      .setName('debug')
-      .setDescription('Debug command')
-      .addStringOption(option =>
-        option.setName('string')
-              .setDescription('String option')
-              .setAutocomplete(true)),
-    execute: async interaction => {
-      interaction.reply(interaction.options.getString('string'));
-    },
-    autocomplete: async interaction => {
-      const vehicles = db.prepare(
-        `SELECT DISTINCT vehicle AS name, vehicle AS value FROM vehicleDestroyEvents 
-        WHERE vehicle IS NOT NULL`
-        ).all();
-      const focusedValue = interaction.options.getFocused();
-      const filtered = vehicles.filter(entry=>entry.name.startsWith(focusedValue)).slice(0, 25);
-      await interaction.respond(filtered); 
-    }
-  }, */
   track: {
     data: new SlashCommandBuilder()
       .setName('track')
@@ -92,13 +63,12 @@ module.exports = {
         await interaction.editReply(`Error: no such team \`${teamTag}\``);
         return;
       }
-      console.log(interaction.options.getSubcommand());
       if (interaction.options.getSubcommand() === 'character') {
         const charNames = interaction.options.getString('character_names').split(' ');
         try {
           charNames.forEach(name=>assertSanitizedInput(name));
         } catch (e) {
-          console.log('Exception caught:', e.name, e.message);
+          logCaughtException(e);
           await interaction.editReply("Error: invalid input argument");
           return
         }
@@ -111,7 +81,7 @@ module.exports = {
           characterDetails = await Promise.all(promises);
         } catch (e) {
           await interaction.editReply("Error: Failed to resolve character requests");
-          console.log('Exception caught:', e.name, e.message);
+          logCaughtException(e);
           return;
         }
         let msg = '';
@@ -126,14 +96,13 @@ module.exports = {
               server: cd.server
             };
             const insertionResult = addTrackedCharacter.run(row);
-            //console.log(insertionResult);
             msg += `\`${cd.outfitTag ? `[${cd.outfitTag}] ` : ''}${cd.character}\` (${cd.faction} ${cd.server}) assigned to \`${teamTag}\`\n`;
           } catch (e) {
             if (e.name === 'SqliteError' && e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
               msg += `\`${cd.character}\` is already assigned to a team\n`;
             }
             else {
-              console.log(e.name, e.message);
+              logCaughtException(e);
               failedCount += 1;
             }
           }
@@ -165,7 +134,7 @@ module.exports = {
           const insertionResult = addTrackedOutfit.run(row);
           await interaction.editReply(`\`${od.outfitTag} - ${od.outfitName}\` (${od.server} ${od.faction}) assigned to \`${teamTag}\``);
         } catch (e) {
-          console.log('Exception caught:', e.name, e.message);
+          logCaughtException(e);
           if (e.name === 'SqliteError' && e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
             await interaction.editReply(`\`${od.outfitTag}\` is already assigned to a team`)
           } else {
@@ -182,7 +151,7 @@ module.exports = {
         const filtered = teams.slice(0, 25).map(entry => ({name: entry.teamTag, value: entry.teamTag}));
         await interaction.respond(filtered);
       } catch (e) {
-        console.log('Exception caught:', e.name, e.message);
+        logCaughtException(e);
         await interaction.respond([]);
       }
     }
@@ -226,7 +195,7 @@ module.exports = {
           if (results.changes === 1) await interaction.editReply(`Removed \`${removed.character}\` from \`${removed.teamTag}\``);
           else await interaction.editReply(`Error: no such character \`${charToRemove}\``);
         } catch (e) {
-          console.log('Exception caught:', e.name, e.message);
+          logCaughtException(e);
           if (e instanceof InvalidInputError) {
             await interaction.editReply(`Error: invalid input argument`);
           } else {
@@ -248,7 +217,7 @@ module.exports = {
           if (results.changes === 1) await interaction.editReply(`Removed \`${removed.outfitTag}\` from \`${removed.teamTag}\``);
           else await interaction.editReply(`Error: no such outfit \`${outfitToRemove}\``);
         } catch (e) {
-          console.log('Exception caught:', e.name, e.message);
+          logCaughtException(e);
           if (e instanceof InvalidInputError) {
             await interaction.editReply(`Error: invalid input argument`);
           } else {
@@ -280,7 +249,7 @@ module.exports = {
           await interaction.respond(filtered);
         }
       } catch {
-        console.log('Exception caught:', e.name, e.message);
+        logCaughtException(e);
         await interaction.respond([]);
       }
     }
@@ -306,11 +275,11 @@ module.exports = {
       const teamName = interaction.options.getString('full_name');
       try {
         assertSanitizedInput(teamTag);
-        if (!sanitizedSentence.test(teamName)) throw new InvalidInputError(`team name "${teamName}" is invalid`);
+        assertSanitizedSentenceInput(teamName);
         addTeam.run({teamTag: teamTag, teamName: teamName});
         await interaction.editReply(`Added \`${teamTag}\` as a team`)
       } catch (e) {
-        console.log('Exception caught:', e.name, e.message);
+        logCaughtException(e);
         if (e.name === 'SqliteError' && e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
           await interaction.editReply(`\`${teamTag}\` already exists`)
         } else {
@@ -336,11 +305,10 @@ module.exports = {
         const teamTag = interaction.options.getString('team_tag');
         assertSanitizedInput(teamTag);
         const result = db.prepare(`DELETE FROM teams WHERE teamTag LIKE '${teamTag}'`).run();
-        console.log(result);
         if (result.changes > 0) await interaction.editReply(`Removed \`${teamTag}\` from teams`);
         else await interaction.editReply(`Error: no such team \`${teamTag}\``)
       } catch (e) {
-        console.log('Exception caught:', e.name, e.message);
+        logCaughtException(e);
         if (e instanceof InvalidInputError) {
           await interaction.editReply(`Error: invalid input argument`) ; 
         } else {
@@ -360,7 +328,7 @@ module.exports = {
         await interaction.respond(filtered);
 
       } catch (e) {
-        console.log('Exception caught:', e.name, e.message);
+        logCaughtException(e);
         await interaction.respond([]);
       }
     }
@@ -415,7 +383,7 @@ module.exports = {
         let msg = `Characters tracked in \`${teamTag}\`:\n\`\`\`${characters.map(c=>c.character).join(', ') || ' '}\`\`\`\nOutfits tracked in \`${teamTag}\`:\n\`\`\`${outfits.map(o=>o.outfitTag).join(', ') || ' '}\`\`\``;
         await interaction.reply(msg);
       } catch (e) {
-        console.log('Exception caught:', e.name, e.message);
+        logCaughtException(e);
         if (e instanceof InvalidInputError) {
           await interaction.reply(`Error: invalid input argument`) ; 
         } else {
@@ -434,7 +402,7 @@ module.exports = {
         const filtered = teams.slice(0, 25).map(entry => ({name: entry.teamTag, value: entry.teamTag}));
         await interaction.respond(filtered);
       } catch (e) {
-        console.log('Exception caught:', e.name, e.message);
+        logCaughtException(e);
         await interaction.respond([]);
       }
     }
@@ -480,12 +448,13 @@ module.exports = {
         const length = interaction.options.getInteger('length');
         if (length < 0 || length > 60*24) throw new InvalidInputError(); // reject less than 0 or more than day
         const timelineFile = await generateTimeline(charNames, startTime, length);
-        const stats = await fs.promises.stat(timelineFile);
-        const sizeMb = stats.size / (1024*1024);
-        if (sizeMb > discordFileSizeLimit) throw new FileTooBigError();
-        await interaction.editReply({content: `Event timeline for \`${charNames.join(', ')}\` starting at <t:${inputDateFormatToTimestamp(startTime)}:F> (${length} min)`, files: [timelineFile]});
+        await assertFileSizeWithinDiscordLimit(timelineFile);
+        await interaction.editReply({
+          content: `Event timeline for \`${charNames.join(', ')}\` starting at <t:${inputDateFormatToTimestamp(startTime)}:F> (${length} min)`, 
+          files: [timelineFile]
+        });
       } catch (e) {
-        console.log('Exception caught:', e.name, e.message);
+        logCaughtException(e);
         if (e instanceof InvalidInputError) {
           await interaction.editReply("Error: invalid input argument");
         } else if (e instanceof InvalidDateFormatError) {
@@ -504,9 +473,8 @@ module.exports = {
       if (focusedOption.name === 'character_names') {
         try {
           let charNames = focusedValue.split(' ');
-          //console.log(charNames);
           const charSet = new Set(charNames);
-          charNames = charNames.filter(charName => sanitizedWord.test(charName));
+          charNames = charNames.filter(charName => isSanitized(charName));
           let charSuggestions = db.prepare(`SELECT character AS name FROM trackedCharacters WHERE character LIKE '%${charNames.at(-1)}%'`).all();
           let showNext = false;
           if (charSuggestions && charSuggestions.at(-1).name === charNames.at(-1)) {
@@ -520,24 +488,22 @@ module.exports = {
           filtered = filtered.map(autocompleteStr => ({name:autocompleteStr, value:autocompleteStr}));
           await interaction.respond(filtered);
         } catch (e) {
-          console.log('timeline autocomplete error:', e.name, e.message);
+          logCaughtException(e);
           await interaction.respond([]);
         }
       } else if (focusedOption.name === 'start_time') {
         try {
           const charNames = interaction.options.getString('character_names').split(' ');
           charNames.forEach(c => assertSanitizedInput(c));
-          console.log(charNames);
           const intervals = db.prepare(
             `SELECT CAST(timestamp/3600 AS INT)*3600 AS interval, COUNT(DISTINCT character) AS charCount 
             FROM experienceEvents WHERE character IN (${charNames.map(c=>`'${c}'`)}) GROUP BY interval ORDER BY interval DESC`).all();
           const filtered = intervals
             .slice(0, 25)
             .map(entry => ({name: `${timestampToInputDateFormat(entry.interval)} (${entry.charCount} players active)`, value: timestampToInputDateFormat(entry.interval)}));
-            console.log(filtered.map(f=>f.value));
             await interaction.respond(filtered);
         } catch (e) {
-          console.log(e.name, e.message);
+          logCaughtException(e);
           await interaction.respond([]);
         }
       }
@@ -573,12 +539,13 @@ module.exports = {
         const length = interaction.options.getInteger('length');
         if (length < 0 || length > 60*24) throw new InvalidInputError(); // reject less than 0 or more than day
         const reportFile = await generateReport(teamTag, startTime, length);
-        const stats = await fs.promises.stat(reportFile);
-        const sizeMb = stats.size / (1024*1024);
-        if (sizeMb > discordFileSizeLimit) throw new FileTooBigError();
-        await interaction.editReply({content: `Session report for \`${teamTag}\` starting at <t:${inputDateFormatToTimestamp(startTime)}:F> (${length} min)`, files: [reportFile]});
+        await assertFileSizeWithinDiscordLimit(reportFile);
+        await interaction.editReply({
+          content: `Session report for \`${teamTag}\` starting at <t:${inputDateFormatToTimestamp(startTime)}:F> (${length} min)`, 
+          files: [reportFile]
+        });
       } catch (e) {
-        console.log('Exception caught:', e.name, e.message, e);
+        logCaughtException(e);
         if (e instanceof InvalidInputError) {
           await interaction.editReply("Error: invalid input argument");
         } else if (e instanceof InvalidDateFormatError) {
@@ -605,7 +572,7 @@ module.exports = {
           await interaction.respond(filtered);
 
         } catch (e) {
-          console.log('Exception caught:', e.name, e.message);
+          logCaughtException(e);
           await interaction.respond([]);
         }
       }
@@ -627,7 +594,7 @@ module.exports = {
             .map(entry => ({name: `${timestampToInputDateFormat(entry.interval)} (${entry.charCount} players active)`, value: timestampToInputDateFormat(entry.interval)}));
             await interaction.respond(filtered);
         } catch (e) {
-          console.log('Exception caught:', e.name, e.message, e);
+          logCaughtException(e);
           await interaction.respond([]);
         }
       }
@@ -642,15 +609,13 @@ module.exports = {
     execute: async interaction => {
       await interaction.deferReply();
       try {
-        let dateStr = new Date().toJSON();
-        dateStr = dateStr.slice(0, 10) + '-' + dateStr.slice(11, 16).replace(':', '');
+        const dateStr = currDateAsFilenameFormat();
         const backupLocation = path.join(__dirname, '/../db/backups', `player-events-backup-${dateStr}.db`);
         db.exec(`VACUUM main INTO '${backupLocation}'`);
-        const stats = await fs.promises.stat(backupLocation);
-        const sizeMb = stats.size / (1024*1024);
+        const sizeMb = await getFileSizeInMb(backupLocation);
         await interaction.editReply(`Backed up database as \`${path.basename(backupLocation)}\` (${sizeMb.toFixed(2)}mb)`);
       } catch (e) {
-        console.log('Caught exception:', e.name, e.message);
+        logCaughtException(e);
         if (e.name === 'SqliteError' && e.code === 'SQLITE_CANTOPEN') {
           await interaction.editReply("Error: no backup directory");
         } else if (e.name === 'SqliteError' && e.code === 'SQLITE_ERROR') {
