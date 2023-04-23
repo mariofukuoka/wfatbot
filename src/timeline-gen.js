@@ -336,29 +336,29 @@ const getTimeline = (characters, startTimestamp, endTimestamp) => {
   return [items, groups]
 }
 
-const generateTimeline = async (characters, startTime, length) => {
+const generateTimeline = async (characterNames, startTime, length) => {
   assertValidDateFormat(startTime);
   //YY-MM-DD hh:mm
   const startTimestamp = inputDateFormatToTimestamp(startTime);
   const endTimestamp = startTimestamp + length*60;
   const charCountLimit = 6;
-  const charListStr = characters.length > charCountLimit 
-    ? `${characters.slice(0, charCountLimit).join('-')}+${characters.length-charCountLimit}-more` 
-    : characters.join('-');
-  const outputFilename = `../output/timeline-${inputDateToFilenameFormat(startTime)}-${length}min-${charListStr}.html`
+  const charListStr = characterNames.length > charCountLimit 
+    ? `${characterNames.slice(0, charCountLimit).join('-')}-and-${characterNames.length-charCountLimit}-more` 
+    : characterNames.join('-');
+  const outputFilename = path.resolve(`../output/timeline-${inputDateToFilenameFormat(startTime)}-${length}min-${charListStr}.html`);
 
   const html = await fs.promises.readFile('../resources/timeline-template.html', 'utf-8');
   const dom = new JSDOM(html);
   const document = dom.window.document;
 
-  const [items, groups] = getTimeline(characters, startTimestamp, endTimestamp);
+  const [items, groups] = getTimeline(characterNames, startTimestamp, endTimestamp);
   const timelineElement = document.getElementById('timeline');
   timelineElement.setAttribute('items', JSON.stringify(items));
   timelineElement.setAttribute('groups', JSON.stringify(groups));
 
   await fs.promises.writeFile(outputFilename, dom.serialize());
 
-  console.log(`${getDateAndTimeString(new Date())} [COMMAND] Event timeline HTML saved to ${path.resolve(outputFilename)}`);
+  console.log(`${getDateAndTimeString(new Date())} [COMMAND] Event timeline HTML saved to ${outputFilename}`);
   return outputFilename;
 }
 

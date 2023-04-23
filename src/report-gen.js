@@ -419,7 +419,11 @@ const generateReportForTeam = async (teamTag, startTime, length) => {
 const generateReportForCharacters = async (characterNames, startTime, length) => {
   const startTimestamp = inputDateFormatToTimestamp(startTime);
   const endTimestamp = startTimestamp + length*60;
-  const outputFilename = `../output/session-report-${inputDateToFilenameFormat(startTime)}-${length}min-${characterNames.join('-')}.html`;
+  const charCountLimit = 6;
+  const charListStr = characterNames.length > charCountLimit 
+    ? `${characterNames.slice(0, charCountLimit).join('-')}-and-${characterNames.length-charCountLimit}-more` 
+    : characterNames.join('-');
+  const outputFilename = path.resolve(`../output/session-report-${inputDateToFilenameFormat(startTime)}-${length}min-${charListStr}.html`);
   return generateReport(
     outputFilename,
     getClassesOverTimeForCharacters(startTimestamp, endTimestamp, characterNames),
@@ -458,7 +462,7 @@ const generateReport = async (outputFilename, classesOverTime, vehiclesOverTime,
 
   await fs.promises.writeFile(outputFilename, dom.serialize());
 
-  console.log(`${getDateAndTimeString(new Date())} [COMMAND] Session report HTML saved to ${path.resolve(outputFilename)}`);
+  console.log(`${getDateAndTimeString(new Date())} [COMMAND] Session report HTML saved to ${outputFilename}`);
   return outputFilename;
 };
 
