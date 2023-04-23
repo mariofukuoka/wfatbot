@@ -701,7 +701,7 @@ module.exports = {
               { name: 'Playtime', value: lsChars.map(c => (c.minutesPlayed < 60 ? `${c.minutesPlayed} min` : `${(c.minutesPlayed/60).toFixed(0)} hours`)).join('\n'), inline: true }
             );
           await interaction.editReply({ embeds: [embed] });
-        } else await interaction.editReply(`No untracked LS characters found for ${teamTag}`);
+        } else await interaction.editReply(`No untracked LS characters found for \`${teamTag}\``);
       } catch (e) {
         logCaughtException(e);
         if (e instanceof InvalidInputError) await interaction.editReply('Error: invalid input argument');
