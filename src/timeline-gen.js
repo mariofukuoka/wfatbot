@@ -3,8 +3,13 @@ const { JSDOM } = require('jsdom');
 const { db } = require('./database-api');
 const fs = require('fs');
 const itemMap = require('../api-maps/item-map.json');
-const { assertValidDateFormat, inputDateFormatToTimestamp, inputDateToFilenameFormat } = require('./helper-funcs');
-
+const { 
+  assertValidDateFormat, 
+  inputDateFormatToTimestamp, 
+  inputDateToFilenameFormat, 
+  getDateAndTimeString 
+} = require('./helper-funcs');
+const path = require('path');
 
 
 const boxHightlightStyle = 'border-color: gold; color: gold;'
@@ -353,7 +358,7 @@ const generateTimeline = async (characters, startTime, length) => {
 
   await fs.promises.writeFile(outputFilename, dom.serialize());
 
-  console.log(`HTML saved to ${outputFilename}`);
+  console.log(`${getDateAndTimeString(new Date())} [COMMAND] Event timeline HTML saved to ${path.resolve(outputFilename)}`);
   return outputFilename;
 }
 
