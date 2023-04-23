@@ -2,10 +2,6 @@
 const fs = require('fs');
 const { basename } = require('path');
 
-const logCaughtException = (error) => {
-  const dateStr = timestampToDate(Date.now()/1000);
-  console.log(`${dateStr} [EXCEPTION] ${error.name} ${error.message}`);
-}
 
 class FileTooBigError extends Error {
   constructor(message) {
@@ -48,6 +44,20 @@ const assertSanitizedSentenceInput = (input) => {
 // valid character ids are odd, npc ids are even
 const charIdIsValid = characterId => characterId.slice(-1) % 2 === 1
 
+const getDateAndTimeString = dateObj => {
+  // in: Date object
+  // out: YYYY-MM-DD hh:mm:ss
+  const dateStr = dateObj.toJSON();
+  const formattedDateStr = `${dateStr.slice(0, 10)} ${dateStr.slice(11, 19)}`;
+  return formattedDateStr;
+}
+
+const timestampToDate = timestamp => {
+  // in: timestamp in sec
+  // out: YYYY-MM-DD hh:mm:ss
+  return getDateAndTimeString(new Date(timestamp*1000));
+}
+
 const timestampToInputDateFormat = timestamp => {
   // in: timestamp in sec
   // out: YY-MM-DD hh:mm
@@ -59,6 +69,12 @@ const timestampToInputDateFormat = timestamp => {
 const currDateAsFilenameFormat = () => {
   const dateStr = new Date().toJSON();
   return dateStr.slice(0, 10) + '-' + dateStr.slice(11, 16).replace(':', '');
+}
+
+const logCaughtException = (error) => {
+  const dateStr = getDateAndTimeString(new Date());
+  console.log(`${dateStr} [EXCEPTION] ${error.name} ${error.message}`);
+  console.log(error);
 }
 
 const inputDateToFilenameFormat = dateStr => {
@@ -86,13 +102,6 @@ const assertValidDateFormat = dateString => {
   if (!dateFormat.test(dateString)) throw new InvalidDateFormatError(`"${dateString}" is not a valid date format`);
 }
 
-const timestampToDate = timestamp => {
-  // in: timestamp in sec
-  // out: YYYY-MM-DD hh:mm:ss
-  const dateStr = new Date(timestamp*1000).toJSON();
-  const formattedDateStr = `${dateStr.slice(0, 10)} ${dateStr.slice(11, 19)}`;
-  return formattedDateStr;
-}
 
 
 const randomColorStr = () => {
@@ -129,6 +138,7 @@ module.exports = {
     getFileSizeInMb,
     assertFileSizeWithinDiscordLimit,
     currDateAsFilenameFormat,
+    getDateAndTimeString,
     timestampToInputDateFormat,
     inputDateFormatToTimestamp,
     inputDateToFilenameFormat
