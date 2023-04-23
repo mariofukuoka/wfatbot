@@ -93,6 +93,10 @@ const getEventMsg = (eventName, event) => {
   return msg;
 }
 
+const logEventToConsole = (eventName, event) => {
+  console.log(getEventMsg(eventName, event));
+}
+
 const getCharAndTeamMap = async () => {
   
   let charMap = {};
@@ -165,7 +169,7 @@ const handleDeathPayload= async (p) => {
     continent: zoneMap[p.zone_id],
     server: worldMap[p.world_id]
   }
-  console.log(getEventMsg(p.event_name, deathEvent));
+  logEventToConsole(p.event_name, deathEvent);
   saveDeathEvent.run(deathEvent);
 }
 
@@ -190,7 +194,7 @@ const handleVehicleDestroyPayload = async (p) => {
     continent: zoneMap[p.zone_id],
     server: worldMap[p.world_id]
   }
-  console.log(getEventMsg(p.event_name, vehicleDestroyEvent));
+  logEventToConsole(p.event_name, vehicleDestroyEvent);
   saveVehicleDestroyEvent.run(vehicleDestroyEvent);
 }
 
@@ -212,7 +216,7 @@ const handleExperiencePayload = async (p) => {
     server: worldMap[p.world_id]
   }
   //console.log(p.event_name, experienceEvent);
-  console.log(getEventMsg(p.event_name, experienceEvent));
+  logEventToConsole(p.event_name, experienceEvent);
   saveExperienceEvent.run(experienceEvent);
 }
 
@@ -228,7 +232,7 @@ const handlePlayerFacilityPayload = async (p) => {
     continent: zoneMap[p.zone_id],
     server: worldMap[p.world_id]
   }
-  console.log(getEventMsg(p.event_name, playerFacilityEvent));
+  logEventToConsole(p.event_name, playerFacilityEvent);
   savePlayerFacilityEvent.run(playerFacilityEvent);
 }
 
@@ -247,7 +251,7 @@ const handleSkillAddedPayload = async (p) => {
     continent: zoneMap[p.zone_id],
     server: worldMap[p.world_id]
   }
-  console.log(getEventMsg(p.event_name, skillAddedEvent));
+  logEventToConsole(p.event_name, skillAddedEvent);
   saveSkillAddedEvent.run(skillAddedEvent);
 }
 
@@ -268,7 +272,7 @@ const handleItemAddedPayload = async (p) => {
     continent: zoneMap[p.zone_id],
     server: worldMap[p.world_id]
   }
-  console.log(getEventMsg(p.event_name, itemAddedEvent));
+  logEventToConsole(p.event_name, itemAddedEvent);
   /* if (item != null && item.parentItems.length > 0) {
     console.log(`Attachment for: ${item.parentItems.map(id => console.log(itemMap[id].name))}`);
   } */
@@ -284,7 +288,7 @@ const handlePlayerSessionPayload = async (p) => {
     type: p.event_name,
     server: worldMap[p.world_id]
   }
-  console.log(getEventMsg(p.event_name, playerSessionEvent));
+  logEventToConsole(p.event_name, playerSessionEvent);
   savePlayerSessionEvent.run(playerSessionEvent);  
   if (trackedIds.has(p.character_id)) {
     
