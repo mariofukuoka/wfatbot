@@ -4,11 +4,30 @@ const { serviceId } = require('../config/config.json');
 const limit = 5000;
 
 function mapTwoArrays(keys, values) {
-    map = keys.reduce( (accumulated, currKey, currIndex) => {
-        accumulated[currKey] = values[currIndex];
-        return accumulated;
-    }, {});
-    return map;
+  map = keys.reduce( (accumulated, currKey, currIndex) => {
+      accumulated[currKey] = values[currIndex];
+      return accumulated;
+  }, {});
+  return map;
+}
+
+async function getLsCharacters(teamTag) {
+  const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/character`
+    + `?name.first_lower=^${teamTag.toLowerCase()}&c:show=character_id,name,times,times&c:lang=en&c:limit=1000`
+    + `&c:join=characters_world^on:character_id^to:character_id^inject_at:characters_world`
+    + `(world^inject_at:world)`;
+  const res = await axios.get(url);
+  const lsChars = [];
+  res.data.character_list.forEach(char => {
+    lsChars.push({
+      characterId: char.character_id,
+      name: char.name.first,
+      lastLoginTimestamp: char.times.last_login,
+      minutesPlayed: char.times.minutes_played,
+      server: char?.characters_world.world.name.en
+    })
+  })
+  return lsChars;
 }
 
 async function getCharacter(charId) {
@@ -426,5 +445,6 @@ module.exports = {
     getCharacterDetails,
     getOutfitDetails,
     getMemberMap,
-    filterOnline
+    filterOnline,
+    getLsCharacters
 }
