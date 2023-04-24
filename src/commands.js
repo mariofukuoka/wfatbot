@@ -661,7 +661,7 @@ module.exports = {
               .setDescription('Sort by chosen field')
               .addChoices(
                 { name: 'Creation date', value: 'creationTimestamp'},
-                { name: 'Last activity date', value: 'lastActiveTimestamp'},
+                { name: 'Last activity date', value: 'lastSaveTimestamp'},
                 { name: 'Playtime', value: 'minutesPlayed'}
               )),
     execute: async interaction => {
@@ -694,7 +694,7 @@ module.exports = {
               { name: 'Character', value: lsChars.map(c => c.name).join('\n'), inline: true },
               { name: 'Created', value: lsChars.map(c => `<t:${c.creationTimestamp}:d>`).join('\n'), inline: true }
           );
-          if (sortedPropertyName == 'minutesPlayed') embed.addFields( { name: 'Last Active', value: lsChars.map(c => `<t:${c.lastSaveTimestamp}:R>`).join('\n'), inline: true } );
+          if (sortedPropertyName !== 'minutesPlayed') embed.addFields( { name: 'Last Active', value: lsChars.map(c => `<t:${c.lastSaveTimestamp}:R>`).join('\n'), inline: true } );
           else embed.addFields( { name: 'Playtime', value: lsChars.map(c => (c.minutesPlayed < 60 ? `${c.minutesPlayed} min` : `${(c.minutesPlayed/60).toFixed(0)} hours`)).join('\n'), inline: true } );
           await interaction.editReply({ embeds: [embed] });
         } else await interaction.editReply(`No untracked LS characters found for \`${teamTag}\``);
