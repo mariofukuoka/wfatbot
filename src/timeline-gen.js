@@ -26,7 +26,7 @@ function toDate(timestamp) {
 const getTimeline = (characters, startTimestamp, endTimestamp) => {
   
   //console.log(startTimestamp, toDate(startTimestamp), endTimestamp, toDate(endTimestamp));
-  const quoteEnclosedCharacters = characters.map(c=>`'${c}'`);
+  const quoteEnclosedCharacters = characters.map(c=>`'${c.toLowerCase()}'`);
 
   const getOtherRepr = (otherId, other) => {
     if (other) return other;
@@ -76,7 +76,7 @@ const getTimeline = (characters, startTimestamp, endTimestamp) => {
   const classCheckpoints = [];
   const deathEvents = db.prepare(
     `SELECT * FROM deathEvents
-    WHERE (character IN (${quoteEnclosedCharacters}) OR attacker in (${quoteEnclosedCharacters}))
+    WHERE (LOWER(character) IN (${quoteEnclosedCharacters}) OR LOWER(attacker) in (${quoteEnclosedCharacters}))
     AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}`
     ).all();
   //console.log(events);
@@ -123,7 +123,7 @@ const getTimeline = (characters, startTimestamp, endTimestamp) => {
 
   const vehicleDestroyEvents = db.prepare(
     `SELECT * FROM vehicleDestroyEvents
-    WHERE (character IN (${quoteEnclosedCharacters}) OR attacker in (${quoteEnclosedCharacters}))
+    WHERE (LOWER(character) IN (${quoteEnclosedCharacters}) OR LOWER(attacker) in (${quoteEnclosedCharacters}))
     AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}`
     ).all();
   vehicleDestroyEvents.forEach( event => {
@@ -165,7 +165,7 @@ const getTimeline = (characters, startTimestamp, endTimestamp) => {
 
   const experienceEvents = db.prepare(
     `SELECT id, timestamp, character, otherId, other, description, class, amount FROM experienceEvents
-    WHERE character IN (${quoteEnclosedCharacters})
+    WHERE LOWER(character) IN (${quoteEnclosedCharacters})
     AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}
     ORDER BY timestamp ASC`
     ).all();
@@ -201,7 +201,7 @@ const getTimeline = (characters, startTimestamp, endTimestamp) => {
 
   const playerSessionEvents = db.prepare(
     `SELECT * FROM playerSessionEvents
-    WHERE character IN (${quoteEnclosedCharacters})
+    WHERE LOWER(character) IN (${quoteEnclosedCharacters})
     AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}`
     ).all();
   const playerSessionItems = [];
@@ -251,7 +251,7 @@ const getTimeline = (characters, startTimestamp, endTimestamp) => {
 
   const playerFacilityEvents = db.prepare(
     `SELECT timestamp, character, type, facility, facilityId, continent FROM playerFacilityEvents
-    WHERE character IN (${quoteEnclosedCharacters})
+    WHERE LOWER(character) IN (${quoteEnclosedCharacters})
     AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}`
     ).all();
   const playerFacilityItems = [];
@@ -270,7 +270,7 @@ const getTimeline = (characters, startTimestamp, endTimestamp) => {
 
   const skillAddedEvents = db.prepare(
     `SELECT * FROM skillAddedEvents
-    WHERE character IN (${quoteEnclosedCharacters})
+    WHERE LOWER(character) IN (${quoteEnclosedCharacters})
     AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}`
     ).all();
   const skillAddedItems = [];
@@ -289,7 +289,7 @@ const getTimeline = (characters, startTimestamp, endTimestamp) => {
 
   const itemAddedEvents = db.prepare(
     `SELECT * FROM itemAddedEvents
-    WHERE character IN (${quoteEnclosedCharacters})
+    WHERE LOWER(character) IN (${quoteEnclosedCharacters})
     AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}`
     ).all();
   const itemAddedItems = [];

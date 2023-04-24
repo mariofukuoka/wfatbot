@@ -56,7 +56,7 @@ const getClassesOverTimeForCharacters = (startTimestamp, endTimestamp, character
       WHERE type LIKE 'PlayerLogout'
     ) AS events
     WHERE timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}
-    AND character IN (${characterNames.map(c=>`'${c}'`)})
+    AND LOWER(character) IN (${characterNames.map(c=>`'${c.toLowerCase()}'`)})
     ORDER BY timestamp ASC`
   ).all();
   return getClassesOverTime(startTimestamp, endTimestamp, events);
@@ -118,7 +118,7 @@ getVehiclesOverTimeForTeam = (startTimestamp, endTimestamp, teamTag) => {
 getVehiclesOverTimeForCharacters = (startTimestamp, endTimestamp, characterNames) => {
   const events = db.prepare(
     `SELECT timestamp, character, otherId, experienceId FROM experienceEvents
-    WHERE character IN (${characterNames.map(c=>`'${c}'`)})
+    WHERE LOWER(character) IN (${characterNames.map(c=>`'${c.toLowerCase()}'`)})
     AND otherId % 2 = 0
     AND otherId <> 0
     AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}
@@ -211,14 +211,14 @@ const getInteractionsOverTimeForTeam = (startTimestamp, endTimestamp, teamTag) =
 }
 
 const getInteractionsOverTimeForCharacters = (startTimestamp, endTimestamp, characterNames) => {
-  const quoteEnclosedCharacterNames = characterNames.map(c=>`'${c}'`);
+  const quoteEnclosedCharacterNames = characterNames.map(c=>`'${c.toLowerCase()}'`);
   const events = db.prepare(
     `SELECT timestamp, attackerVehicle, vehicle, character, type FROM (
       SELECT timestamp, attackerVehicle, vehicle, character, attacker, 'VehicleDestroy' AS type FROM vehicleDestroyEvents
       UNION
       SELECT timestamp, attackerVehicle, NULL AS vehicle, character, attacker, 'Death' as type FROM deathEvents
     ) AS events
-    WHERE (attacker IN (${quoteEnclosedCharacterNames}) OR character IN (${quoteEnclosedCharacterNames}))
+    WHERE (LOWER(attacker) IN (${quoteEnclosedCharacterNames}) OR LOWER(character) IN (${quoteEnclosedCharacterNames}))
     AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}
     ORDER BY timestamp ASC`
   ).all();
@@ -273,11 +273,11 @@ const getNodesAndEdgesForTeam = (startTimestamp, endTimestamp, teamTag) => {
 }
 
 const getNodesAndEdgesForCharacters = (startTimestamp, endTimestamp, characterNames) => {
-  const quoteEnclosedCharacterNames = characterNames.map(c=>`'${c}'`);
+  const quoteEnclosedCharacterNames = characterNames.map(c=>`'${c.toLowerCase()}'`);
   const events = db.prepare(
     `SELECT timestamp, character, faction, other, experienceId, description, amount FROM experienceEvents
     WHERE otherId % 2 = 1
-    AND (character IN (${quoteEnclosedCharacterNames}) OR other IN (${quoteEnclosedCharacterNames}))
+    AND (LOWER(character) IN (${quoteEnclosedCharacterNames}) OR LOWER(other) IN (${quoteEnclosedCharacterNames}))
     AND timestamp BETWEEN ${startTimestamp} AND ${endTimestamp}
     ORDER BY timestamp ASC`
   ).all();

@@ -2,6 +2,12 @@
 const fs = require('fs');
 const { basename } = require('path');
 
+class NotFoundError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'NotFoundError';
+  }
+}
 
 class FileTooBigError extends Error {
   constructor(message) {
@@ -141,5 +147,6 @@ module.exports = {
     getDateAndTimeString,
     timestampToInputDateFormat,
     inputDateFormatToTimestamp,
-    inputDateToFilenameFormat
+    inputDateToFilenameFormat,
+    NotFoundError
 }

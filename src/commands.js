@@ -7,6 +7,7 @@ const { generateReportForCharacters, generateReportForTeam } = require('./report
 const { 
   logCaughtException,
   InvalidInputError,
+  NotFoundError,
   isSanitized,
   assertSanitizedInput,
   assertSanitizedSentenceInput,
@@ -43,7 +44,7 @@ const getCharacterActiveDateAutocompletion = charNames => {
   charNames.forEach(c => assertSanitizedInput(c));
   const intervals = db.prepare(
     `SELECT CAST(timestamp/3600 AS INT)*3600 AS interval, COUNT(DISTINCT character) AS charCount 
-    FROM experienceEvents WHERE character IN (${charNames.map(c=>`'${c}'`)}) GROUP BY interval ORDER BY interval DESC`).all();
+    FROM experienceEvents WHERE LOWER(character) IN (${charNames.map(c=>`'${c.toLowerCase()}'`)}) GROUP BY interval ORDER BY interval DESC`).all();
   const filtered = intervals
     .slice(0, 25)
     .map(entry => ({
@@ -93,93 +94,74 @@ module.exports = {
                           .setRequired(true))),
     execute: async interaction => {
       await interaction.deferReply();
-      const teamTag = interaction.options.getString('team_tag');
-      assertSanitizedInput(teamTag);
-      const teamId = db.prepare(`SELECT teamId FROM teams WHERE teamTag LIKE '${teamTag}'`).get()?.teamId;
-      
-      if (!teamId) {
-        await interaction.editReply(`Error: no such team \`${teamTag}\``);
-        return;
-      }
-      if (interaction.options.getSubcommand() === 'character') {
-        const charNames = interaction.options.getString('character_names').split(' ');
-        try {
+      try {
+        const teamTag = interaction.options.getString('team_tag');
+        assertSanitizedInput(teamTag);
+        const teamId = db.prepare(`SELECT teamId FROM teams WHERE teamTag LIKE '${teamTag}'`).get()?.teamId;
+        if (!teamId) throw new NotFoundError(`no team called \`${teamTag}\` found`);
+        if (interaction.options.getSubcommand() === 'character') {
+          const charNames = interaction.options.getString('character_names').split(' ');
           charNames.forEach(name=>assertSanitizedInput(name));
-        } catch (e) {
-          logCaughtException(e);
-          await interaction.editReply("Error: invalid input argument");
-          return
-        }
-        const promises = [];
-        charNames.forEach( charName => {
-          promises.push(getCharacterDetails(charName))
-        });
-        let characterDetails = null;
-        try {
-          characterDetails = await Promise.all(promises);
-        } catch (e) {
-          await interaction.editReply("Error: Failed to resolve character requests");
-          logCaughtException(e);
-          return;
-        }
-        let msg = '';
-        let failedCount = 0;
-        characterDetails.forEach( cd => {
+          let alreadyTracked = db.prepare(
+            `SELECT character, teamTag FROM trackedCharacters 
+            JOIN teams ON teams.teamId=trackedCharacters.teamId
+            WHERE LOWER(character) IN (${charNames.map(c=>`'${c.toLowerCase()}'`)})`).all();
+          console.log(alreadyTracked);
+          const promises = charNames.map( charName => getCharacterDetails(charName) );
+          let msg = '';
+          const results = await Promise.allSettled(promises);
+          results.forEach( (res, idx) => {
+            if (res.status === 'fulfilled') {
+              try {
+                if (res.value === null) throw new NotFoundError();
+                const row = {
+                  characterId: res.value.characterId,
+                  character: res.value.character,
+                  teamId: teamId,
+                  faction: res.value.faction,
+                  server: res.value.server
+                };
+                addTrackedCharacter.run(row);
+                msg += `\`${res.value.character}\` (${res.value.faction} ${res.value.server}) assigned to \`${teamTag}\`\n`;
+              } catch (e) {
+                if (e.name === 'SqliteError' && e.code === 'SQLITE_CONSTRAINT_UNIQUE') 
+                  msg += `\`${res.value.character}\` is already assigned to \`${alreadyTracked[alreadyTracked.map(entry=>entry.character).indexOf(res.value.character)]?.teamTag}\`\n`;
+                else if (e instanceof NotFoundError) msg += `\`${charNames[idx]}\`: no such character found\n`;
+                else msg += `\`${charNames[idx]}\` failed to be processed\n`;
+              }
+            } 
+            else msg += `${charNames[idx]} failed to be resolved (${res.reason})\n`;
+          });
+          await interaction.editReply(msg);
+        } 
+        else if (interaction.options.getSubcommand() === 'outfit') {
+          const outfitTag = interaction.options.getString('outfit_tag');
+          assertSanitizedInput(outfitTag);
           try {
+            const outfit = await getOutfitDetails(outfitTag);
+            if (outfit.memberCount > 1000) throw new Error('Tracking zergfits is a bad idea');
             const row = {
-              characterId: cd.characterId,
-              character: cd.character,
+              outfitId: outfit.outfitId,
+              outfitTag: outfit.outfitTag,
+              outfitName: outfit.outfitName,
               teamId: teamId,
-              faction: cd.faction,
-              server: cd.server
+              faction: outfit.faction,
+              server: outfit.server
             };
-            const insertionResult = addTrackedCharacter.run(row);
-            msg += `\`${cd.outfitTag ? `[${cd.outfitTag}] ` : ''}${cd.character}\` (${cd.faction} ${cd.server}) assigned to \`${teamTag}\`\n`;
+            addTrackedOutfit.run(row);
+            await interaction.editReply(`\`${outfit.outfitTag} - ${outfit.outfitName}\` (${outfit.server} ${outfit.faction}) assigned to \`${teamTag}\``);
           } catch (e) {
             if (e.name === 'SqliteError' && e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-              msg += `\`${cd.character}\` is already assigned to a team\n`;
-            }
-            else {
-              logCaughtException(e);
-              failedCount += 1;
+              await interaction.editReply(`\`${outfitTag}\` is already assigned to a team`)
+            } else {
+              await interaction.editReply(`Error: failed to resolve/assign outfit`);
             }
           }
-        })
-        if (failedCount > 0) msg += `Error: failed to resolve ${failedCount} characters`
-        await interaction.editReply(msg);
-      } 
-      else if (interaction.options.getSubcommand() === 'outfit') {
-        const outfitTag = interaction.options.getString('outfit_tag');
-        try {
-          assertSanitizedInput(outfitTag);
-        } catch (e) {
-          await interaction.editReply(`Error: invalid input argument`);
-        }
-        const od = await getOutfitDetails(outfitTag);
-        
-        try {
-          if (od.memberCount > 1000) {
-            await interaction.editReply(`Error: \`${od.outfitTag} - ${od.outfitName}\` (${od.faction} ${od.server}) has ${od.memberCount} members. Zergfits have too many players to track at once.`);
-          }
-          const row = {
-            outfitId: od.outfitId,
-            outfitTag: od.outfitTag,
-            outfitName: od.outfitName,
-            teamId: teamId,
-            faction: od.faction,
-            server: od.server
-          };
-          const insertionResult = addTrackedOutfit.run(row);
-          await interaction.editReply(`\`${od.outfitTag} - ${od.outfitName}\` (${od.server} ${od.faction}) assigned to \`${teamTag}\``);
-        } catch (e) {
-          logCaughtException(e);
-          if (e.name === 'SqliteError' && e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-            await interaction.editReply(`\`${od.outfitTag}\` is already assigned to a team`)
-          } else {
-            await interaction.editReply(`Error: failed to resolve/assign outfit`);
-          }
-        }
-      } else await interaction.editReply('Error: invalid subcommand');
+        } else throw Error('Error: invalid subcommand');
+      } catch (e) {
+        logCaughtException(e);
+        await interaction.editReply(`Error: could not execute command`)
+      }
     },
     autocomplete: async interaction => {
       try {
@@ -217,8 +199,9 @@ module.exports = {
                         .setAutocomplete(true))),
     execute: async interaction => {
       await interaction.deferReply();
-      if (interaction.options.getSubcommand() === 'character') {
-        try {
+      try {
+        const subcommand = interaction.options.getSubcommand();
+        if (subcommand === 'character') {
           const charToRemove = interaction.options.getString('character_name');
           assertSanitizedInput(charToRemove);
           const removed = db.prepare(
@@ -230,17 +213,8 @@ module.exports = {
             WHERE character LIKE '${charToRemove}'`).run();
           if (results.changes === 1) await interaction.editReply(`Removed \`${removed.character}\` from \`${removed.teamTag}\``);
           else await interaction.editReply(`Error: no such character \`${charToRemove}\``);
-        } catch (e) {
-          logCaughtException(e);
-          if (e instanceof InvalidInputError) {
-            await interaction.editReply(`Error: invalid input argument`);
-          } else {
-            await interaction.editReply(`Error: couldn't remove character \`${charToRemove}\``);
-          }
         }
-      }
-      else {
-        try {
+        else if (subcommand === 'outfit') {
           const outfitToRemove = interaction.options.getString('outfit_tag');
           assertSanitizedInput(outfitToRemove);
           const removed = db.prepare(
@@ -252,13 +226,13 @@ module.exports = {
             WHERE outfitTag LIKE '${outfitToRemove}'`).run();
           if (results.changes === 1) await interaction.editReply(`Removed \`${removed.outfitTag}\` from \`${removed.teamTag}\``);
           else await interaction.editReply(`Error: no such outfit \`${outfitToRemove}\``);
-        } catch (e) {
-          logCaughtException(e);
-          if (e instanceof InvalidInputError) {
-            await interaction.editReply(`Error: invalid input argument`);
-          } else {
-            await interaction.editReply(`Error: couldn't remove character \`${outfitToRemove}\``);
-          }
+        } else throw Error('Invalid subcommand for player removal command');
+      } catch (e) {
+        logCaughtException(e);
+        if (e instanceof InvalidInputError) {
+          await interaction.editReply(`Error: invalid input argument`);
+        } else {
+          await interaction.editReply(`Error: couldn't remove ${subcommand} \`${outfitToRemove}\``);
         }
       }
     },
@@ -307,9 +281,9 @@ module.exports = {
               .setRequired(true)),
     execute: async interaction => {
       await interaction.deferReply();
-      const teamTag = interaction.options.getString('team_tag');
-      const teamName = interaction.options.getString('full_name');
       try {
+        const teamTag = interaction.options.getString('team_tag');
+        const teamName = interaction.options.getString('full_name');
         assertSanitizedInput(teamTag);
         assertSanitizedSentenceInput(teamName);
         addTeam.run({teamTag: teamTag, teamName: teamName});
@@ -353,8 +327,8 @@ module.exports = {
       }
     },
     autocomplete: async interaction => {
-      const focusedValue = interaction.options.getFocused();
       try {
+        const focusedValue = interaction.options.getFocused();
         const autocompletion = getTeamAutocompletion(focusedValue);
         await interaction.respond(autocompletion);
 
@@ -466,8 +440,8 @@ module.exports = {
               .setRequired(true)),
     execute: async interaction => {
       await interaction.deferReply();
-      const charNames = interaction.options.getString('character_names').split(' ');
       try {
+        const charNames = interaction.options.getString('character_names').split(' ');
         charNames.forEach(name=>assertSanitizedInput(name));
         const startTime = interaction.options.getString('start_time');
         assertValidDateFormat(startTime);
@@ -494,9 +468,9 @@ module.exports = {
       }
     },
     autocomplete: async interaction => {
-      const focusedOption = interaction.options.getFocused(true);
-      const focusedValue = focusedOption.value;
       try {
+        const focusedOption = interaction.options.getFocused(true);
+        const focusedValue = focusedOption.value;
         if (focusedOption.name === 'character_names') {
           const autocompletion = getNextCharNameAutocompletion(focusedValue);
           await interaction.respond(autocompletion);
@@ -554,8 +528,8 @@ module.exports = {
                             .setRequired(true))),
     execute: async interaction => {
       await interaction.deferReply();
-      const subcommand = interaction.options.getSubcommand();
       try {
+        const subcommand = interaction.options.getSubcommand();
         const startTime = interaction.options.getString('start_time');
         assertValidDateFormat(startTime);
         const length = interaction.options.getInteger('length');
@@ -596,9 +570,9 @@ module.exports = {
       }
     },
     autocomplete: async interaction => {
-      const focusedOption = interaction.options.getFocused(true);
-      const focusedValue = focusedOption.value;
       try {
+        const focusedOption = interaction.options.getFocused(true);
+        const focusedValue = focusedOption.value;
         if (focusedOption.name === 'character_names') {
           const autocompletion = getNextCharNameAutocompletion(focusedValue);
           await interaction.respond(autocompletion);
