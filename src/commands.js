@@ -22,6 +22,8 @@ const {
 } = require('./helper-funcs');
 const path = require('path');
 
+const maxReportLength = 6*60;
+
 const getNextCharNameAutocompletion = focusedValue => {
   let charNames = focusedValue.split(' ');
   charNames = charNames.filter(charName => isSanitized(charName));
@@ -75,7 +77,8 @@ module.exports = {
                     option.setName('team_tag')
                           .setDescription('Team tag')
                           .setAutocomplete(true)
-                          .setRequired(true))
+                          .setRequired(true)
+                          .setMaxLength(4))
                   .addStringOption(option =>
                     option.setName('character_names')
                           .setDescription('Character names separated by space')
@@ -87,7 +90,8 @@ module.exports = {
                     option.setName('team_tag')
                           .setDescription('Team tag')
                           .setAutocomplete(true)
-                          .setRequired(true))
+                          .setRequired(true)
+                          .setMaxLength(4))
                   .addStringOption(option =>
                     option.setName('outfit_tag')
                           .setDescription('Outfit tag')
@@ -274,7 +278,8 @@ module.exports = {
       .addStringOption(option =>
         option.setName('team_tag')
               .setDescription('Team tag')
-              .setRequired(true))
+              .setRequired(true)
+              .setMaxLength(4))
       .addStringOption(option =>
         option.setName('full_name')
               .setDescription('Full team name')
@@ -308,7 +313,8 @@ module.exports = {
         option.setName('team_tag')
               .setDescription('Team tag')
               .setRequired(true)
-              .setAutocomplete(true)),
+              .setAutocomplete(true)
+              .setMaxLength(4)),
     execute: async interaction => {
       await interaction.deferReply();
       try {
@@ -364,7 +370,8 @@ module.exports = {
         option.setName('team_tag')
               .setDescription('Team tag')
               .setRequired(true)
-              .setAutocomplete(true)),
+              .setAutocomplete(true)
+              .setMaxLength(4)),
     execute: async interaction => {
       try {
         const inputTeamTag = interaction.options.getString('team_tag');
@@ -437,7 +444,8 @@ module.exports = {
       .addIntegerOption(option=>
         option.setName('length')
               .setDescription('Timeline length in minutes')
-              .setRequired(true)),
+              .setRequired(true)
+              .setMaxValue(maxReportLength)),
     execute: async interaction => {
       await interaction.deferReply();
       try {
@@ -446,7 +454,6 @@ module.exports = {
         const startTime = interaction.options.getString('start_time');
         assertValidDateFormat(startTime);
         const length = interaction.options.getInteger('length');
-        if (length < 0 || length > 60*24) throw new InvalidInputError(); // reject less than 0 or more than day
         const timelineFile = await generateTimeline(charNames, startTime, length);
         await assertFileSizeWithinDiscordLimit(timelineFile);
         await interaction.editReply({
@@ -508,7 +515,8 @@ module.exports = {
                   .addIntegerOption(option=>
                     option.setName('length')
                           .setDescription('Session length in minutes')
-                          .setRequired(true)))
+                          .setRequired(true)
+                          .setMaxValue(maxReportLength)))
         .addSubcommand(subcommand =>
           subcommand.setName('team')
                     .setDescription('Generate session report for a team')
@@ -516,7 +524,8 @@ module.exports = {
                       option.setName('team_tag')
                             .setDescription('Team tag')
                             .setRequired(true)
-                            .setAutocomplete(true))
+                            .setAutocomplete(true)
+                            .setMaxLength(4))
                     .addStringOption(option=>
                       option.setName('start_time')
                             .setDescription('Session start time in "YYMMDD HH:MM"')
@@ -525,7 +534,8 @@ module.exports = {
                     .addIntegerOption(option=>
                       option.setName('length')
                             .setDescription('Session length in minutes')
-                            .setRequired(true))),
+                            .setRequired(true)
+                            .setMaxValue(maxReportLength))),
     execute: async interaction => {
       await interaction.deferReply();
       try {
@@ -533,7 +543,6 @@ module.exports = {
         const startTime = interaction.options.getString('start_time');
         assertValidDateFormat(startTime);
         const length = interaction.options.getInteger('length');
-        if (length < 0 || length > 60*24) throw new InvalidInputError(); // reject less than 0 or more than day
         if (subcommand === 'characters') {
           const charNames = interaction.options.getString('character_names').split(' ');
           charNames.forEach(c => assertSanitizedInput(c));
@@ -645,7 +654,16 @@ module.exports = {
         option.setName('team_tag')
               .setDescription('Team tag')
               .setRequired(true)
-              .setAutocomplete(true)),
+              .setAutocomplete(true)
+              .setMaxLength(4))
+      .addStringOption(option=>
+        option.setName('sort_by')
+              .setDescription('Sort by chosen field')
+              .addChoices(
+                { name: 'Creation date', value: 'creationTimestamp'},
+                { name: 'Last activity date', value: 'lastActiveTimestamp'},
+                { name: 'Playtime', value: 'minutesPlayed'}
+              )),
     execute: async interaction => {
       await interaction.deferReply();
       try {
@@ -661,19 +679,23 @@ module.exports = {
         alreadyTrackedChars = new Set(alreadyTrackedChars.map(c => c.characterId));
         lsChars = lsChars.filter(c => !alreadyTrackedChars.has(c.characterId));
         if (lsChars.length > 0) {
+          const sortedPropertyName = interaction.options.getString('sort_by');
+          console.log(sortedPropertyName);
           const embed = new EmbedBuilder()
             .setTitle(`Found untracked LS characters for team \`${teamTag}\``)
             .setDescription('PSB-provided characters that are unnacounted for');
-          if (lsChars.length > 50) {
-            embed.setFooter( { text:`+ ${lsChars.length - 50} more`} );
-            lsChars = lsChars.slice(0, 50);
+          if (sortedPropertyName) lsChars.sort((a, b) => b[sortedPropertyName] - a[sortedPropertyName]);
+          const maxCharacterLimit = 50;
+          if (lsChars.length > maxCharacterLimit) {
+            embed.setFooter( { text:`+ ${lsChars.length - maxCharacterLimit} more`} );
+            lsChars = lsChars.slice(0, maxCharacterLimit);
           }
-          lsChars.sort((a, b) => b.minutesPlayed - a.minutesPlayed);
           embed.addFields(
               { name: 'Character', value: lsChars.map(c => c.name).join('\n'), inline: true },
-              { name: 'Last Login', value: lsChars.map(c => `<t:${c.lastLoginTimestamp}:d>`).join('\n'), inline: true },
-              { name: 'Playtime', value: lsChars.map(c => (c.minutesPlayed < 60 ? `${c.minutesPlayed} min` : `${(c.minutesPlayed/60).toFixed(0)} hours`)).join('\n'), inline: true }
-            );
+              { name: 'Created', value: lsChars.map(c => `<t:${c.creationTimestamp}:d>`).join('\n'), inline: true }
+          );
+          if (sortedPropertyName == 'minutesPlayed') embed.addFields( { name: 'Last Active', value: lsChars.map(c => `<t:${c.lastSaveTimestamp}:R>`).join('\n'), inline: true } );
+          else embed.addFields( { name: 'Playtime', value: lsChars.map(c => (c.minutesPlayed < 60 ? `${c.minutesPlayed} min` : `${(c.minutesPlayed/60).toFixed(0)} hours`)).join('\n'), inline: true } );
           await interaction.editReply({ embeds: [embed] });
         } else await interaction.editReply(`No untracked LS characters found for \`${teamTag}\``);
       } catch (e) {

@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { generalizeEmpireSpecificName } = require('./helper-funcs');
+const { generalizeEmpireSpecificName, logCaughtException } = require('./helper-funcs');
 const { serviceId } = require('../config/config.json');
 const limit = 5000;
 
@@ -19,13 +19,19 @@ async function getLsCharacters(teamTag) {
   const res = await axios.get(url);
   const lsChars = [];
   res.data.character_list.forEach(char => {
-    lsChars.push({
-      characterId: char.character_id,
-      name: char.name.first,
-      lastLoginTimestamp: char.times.last_login,
-      minutesPlayed: char.times.minutes_played,
-      server: char?.characters_world?.world?.name.en
-    })
+    try {
+      lsChars.push({
+        characterId: char.character_id,
+        name: char.name.first,
+        creationTimestamp: char.times.creation,
+        lastSaveTimestamp: char.times.last_save,
+        lastLoginTimestamp: char.times.last_login,
+        minutesPlayed: char.times.minutes_played,
+        server: char.characters_world.world.name.en
+      })
+    } catch (e) {
+      // invalid char
+    }
   })
   return lsChars;
 }
@@ -141,9 +147,14 @@ async function getMemberMap(outfitTag, teamId=null) {
   const url = `https://census.daybreakgames.com/s:${serviceId}/get/ps2:v2/outfit/?alias_lower=${outfitTag.toLowerCase()}&c:show=outfit_id,alias_lower&c:join=outfit_member^inject_at:members^list:1^show:outfit_id'character_id(character_name^on:character_id^to:character_id^inject_at:character)`;
   const response = await axios.get(url);
   //console.log(response.data)
-  response.data.outfit_list[0].members.forEach(member => {
-      if (member?.character?.name?.first) memberMap[member.character_id] = { name: member.character.name.first, teamId: teamId };
-  });
+  try {
+    response.data.outfit_list[0].members.forEach(member => {
+        if (member?.character?.name?.first) memberMap[member.character_id] = { name: member.character.name.first, teamId: teamId };
+    });
+  } catch (e) {
+    console.log(`Error fetching outfit ${outfitTag} for team ${teamId}!`);
+    logCaughtException(e);
+  }
   return memberMap;
 }
 
