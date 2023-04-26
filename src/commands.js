@@ -650,6 +650,8 @@ module.exports = {
     data: new SlashCommandBuilder()
       .setName('list_untracked_ls_characters')
       .setDescription("Check for a team's existing untracked PSB-provided characters")
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .setDMPermission(false)
       .addStringOption(option=>
         option.setName('team_tag')
               .setDescription('Team tag')
