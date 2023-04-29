@@ -25,7 +25,7 @@ const path = require('path');
 const maxReportLength = 6*60;
 
 const getNextCharNameAutocompletion = focusedValue => {
-  let charNames = focusedValue.split(' ');
+  let charNames = focusedValue.split(/\s+/);
   charNames = charNames.filter(charName => isSanitized(charName));
   const charSet = new Set(charNames);
   let charSuggestions = db.prepare(`SELECT character AS name FROM trackedCharacters WHERE character LIKE '%${charNames.at(-1)}%'`).all();
@@ -104,7 +104,7 @@ module.exports = {
         const teamId = db.prepare(`SELECT teamId FROM teams WHERE teamTag LIKE '${teamTag}'`).get()?.teamId;
         if (!teamId) throw new NotFoundError(`no team called \`${teamTag}\` found`);
         if (interaction.options.getSubcommand() === 'character') {
-          const charNames = interaction.options.getString('character_names').split(' ');
+          const charNames = interaction.options.getString('character_names').split(/\s+/);
           charNames.forEach(name=>assertSanitizedInput(name));
           let alreadyTracked = db.prepare(
             `SELECT character, teamTag FROM trackedCharacters 
@@ -353,7 +353,7 @@ module.exports = {
     execute: async interaction => {
       try {
         const teams = db.prepare(`SELECT teamTag, teamName FROM teams ORDER BY teamTag ASC`).all();
-        const msg = `Tracked teams:\n\`\`\`${teams.map(row=>row.teamTag).join(', ') || ' '}\`\`\``
+        const msg = `Tracked teams:\n\`\`\`${teams.map(row=>row.teamTag).join(' ') || ' '}\`\`\``
         await interaction.reply(msg);
       } catch (e) {
         await interaction.reply("Error: couldn't execute command")
@@ -392,7 +392,7 @@ module.exports = {
           INNER JOIN teams ON teams.teamId = trackedCharacters.teamId 
           WHERE teamTag LIKE '${teamTag}'
           ORDER BY character ASC`).all();
-        let msg = `Characters tracked in \`${teamTag}\`:\n\`\`\`${characters.map(c=>c.character).join(', ') || ' '}\`\`\`\nOutfits tracked in \`${teamTag}\`:\n\`\`\`${outfits.map(o=>o.outfitTag).join(', ') || ' '}\`\`\``;
+        let msg = `Characters tracked in \`${teamTag}\`:\n\`\`\`${characters.map(c=>c.character).join(' ') || ' '}\`\`\`\nOutfits tracked in \`${teamTag}\`:\n\`\`\`${outfits.map(o=>o.outfitTag).join(' ') || ' '}\`\`\``;
         await interaction.reply(msg);
       } catch (e) {
         logCaughtException(e);
@@ -449,7 +449,7 @@ module.exports = {
     execute: async interaction => {
       await interaction.deferReply();
       try {
-        const charNames = interaction.options.getString('character_names').split(' ');
+        const charNames = interaction.options.getString('character_names').split(/\s+/);
         charNames.forEach(name=>assertSanitizedInput(name));
         const startTime = interaction.options.getString('start_time');
         assertValidDateFormat(startTime);
@@ -457,7 +457,7 @@ module.exports = {
         const timelineFile = await generateTimeline(charNames, startTime, length);
         await assertFileSizeWithinDiscordLimit(timelineFile);
         await interaction.editReply({
-          content: `Event timeline for \`${charNames.join(', ')}\` starting at <t:${inputDateFormatToTimestamp(startTime)}:F> (${length} min)`, 
+          content: `Event timeline for \`${charNames.join(' ')}\` starting at <t:${inputDateFormatToTimestamp(startTime)}:F> (${length} min)`, 
           files: [timelineFile]
         });
       } catch (e) {
@@ -483,7 +483,7 @@ module.exports = {
           await interaction.respond(autocompletion);
         } 
         else if (focusedOption.name === 'start_time') {
-          const charNames = interaction.options.getString('character_names').split(' ');
+          const charNames = interaction.options.getString('character_names').split(/\s+/);
           const autocompletion = getCharacterActiveDateAutocompletion(charNames);
           await interaction.respond(autocompletion);
         }
@@ -544,12 +544,12 @@ module.exports = {
         assertValidDateFormat(startTime);
         const length = interaction.options.getInteger('length');
         if (subcommand === 'characters') {
-          const charNames = interaction.options.getString('character_names').split(' ');
+          const charNames = interaction.options.getString('character_names').split(/\s+/);
           charNames.forEach(c => assertSanitizedInput(c));
           const reportFile = await generateReportForCharacters(charNames, startTime, length);
           await assertFileSizeWithinDiscordLimit(reportFile);
           await interaction.editReply({
-            content: `Session report for \`${charNames.join(', ')}\` starting at <t:${inputDateFormatToTimestamp(startTime)}:F> (${length} min)`, 
+            content: `Session report for \`${charNames.join(' ')}\` starting at <t:${inputDateFormatToTimestamp(startTime)}:F> (${length} min)`, 
             files: [reportFile]
           });
         }
@@ -593,7 +593,7 @@ module.exports = {
         else if (focusedOption.name === 'start_time') {
           const subcommand = interaction.options.getSubcommand();
           if (subcommand === 'characters') {
-            const charNames = interaction.options.getString('character_names').split(' ');
+            const charNames = interaction.options.getString('character_names').split(/\s+/);
             const autocompletion = getCharacterActiveDateAutocompletion(charNames);
             await interaction.respond(autocompletion);
           } else if (subcommand === 'team') {
