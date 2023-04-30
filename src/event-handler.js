@@ -91,10 +91,9 @@ const getEventMsg = (eventName, event) => {
   } else if (eventName === 'PlayerLogout') {
     msg += `${involvedTeams?.[0] ? `[${involvedTeams[0]}] ` : ''}${event.character} logged out`;
   } else return 'unknown event';
-  msg += ` [${event.server}]`
   eventMsgBuffer.push(`<t:${event.timestamp}:T>\` > ${msg}\``);
   if (eventMsgBuffer.length > eventMsgBufferMaxLength) eventMsgBuffer.shift();
-  return header + ' '.repeat('PlayerFacilityCapture'.length - eventName.length) + msg;
+  return header + ' '.repeat('PlayerFacilityCapture'.length - eventName.length) + msg + ` [${event.server}]`;
 }
 
 const logEventToConsole = (eventName, event) => {

@@ -25,6 +25,8 @@ const path = require('path');
 const { time } = require('console');
 
 const maxReportLength = 6*60;
+const eventStreamViewTimers = new Set();
+const maxTimersAllowed = 5;
 
 const getNextCharNameAutocompletion = focusedValue => {
   let charNames = focusedValue.split(/\s+/);
@@ -737,13 +739,18 @@ module.exports = {
       const defaultTimeout = 5; // 5 min default
       const startTime = parseInt(Date.now()/1000);
       const timeout = interaction.options.getInteger('timeout') || defaultTimeout;
+      if (eventStreamViewTimers.size >= maxTimersAllowed) {
+        await interaction.editReply('Error: maximum concurrent event stream views reached, please wait for one of the other ones to run out');
+        return;
+      }
       const timerId = setInterval(async () => {
         try {
           const currTime = parseInt(Date.now()/1000);
           let msgHeader = `📡 Event stream (updated <t:${currTime}:R>):\n`;
-          const msgBody = eventMsgBuffer.join('\n') || ' ';
+          const msgBody = eventMsgBuffer.join('\n') || '`...ded gaem...`';
           if (currTime - startTime > timeout*60) {
             clearInterval(timerId);
+            eventStreamViewTimers.delete(timerId);
             msgHeader = `🔒 Event stream (final update <t:${currTime}:R>):\n`;
           }
           await interaction.editReply(msgHeader + msgBody);
@@ -751,7 +758,7 @@ module.exports = {
           await interaction.editReply(`Event stream (updated <t:${parseInt(Date.now()/1000)}:R>):\n\`${logCaughtException(e)}\``)
         }
       }, streamViewUpdatePeriod);
-      //eventStreamViewtimers.push(timerId);
+      eventStreamViewTimers.add(timerId);
     }
   }
 }
