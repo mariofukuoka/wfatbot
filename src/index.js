@@ -5,7 +5,7 @@ const { token } = require('../config/config.json');
 const { startWebsocket, clearRecentStats } = require('./event-handler');
 const commands = require('./commands');
 
-const statusUpdatePeriod = 10; // minutes
+const statusUpdatePeriod = 5; // minutes
 
 async function asyncMain() {
 
