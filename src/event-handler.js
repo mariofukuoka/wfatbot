@@ -36,6 +36,12 @@ const eventMsgBufferMaxLength = 12;
 
 const vrZoneIds = new Set('95', '96', '97', '98');
 
+var recentStats = {
+  uniquePlayers: new Set(),
+  eventCount: 0,
+  lastClear: Date.now()
+}
+
 // todo: make a command to read curr teamMap and charMap counts
 
 const getEventMsg = (eventName, event) => {
@@ -298,10 +304,11 @@ const handlePlayerSessionPayload = async (p) => {
     let msg = `Team ${teamMap[charMap[p.character_id].teamId].tag} online count updated from ${teamMap[charMap[p.character_id].teamId].currOnline.size} to `
     if (p.event_name === 'PlayerLogin') {
       teamMap[charMap[p.character_id].teamId].currOnline.add(p.character_id);
-    }
-    else {
+    } else {
       teamMap[charMap[p.character_id].teamId].currOnline.delete(p.character_id);
+      uniquePlayers.delete(p.character_id);
     }
+    console.log(msg + teamMap[charMap[p.character_id].teamId].currOnline.size);
   }
 }
 
@@ -327,11 +334,6 @@ const getSubscription = trackedIds => {
   }
 }
 
-var recentStats = {
-  uniquePlayers: new Set(),
-  eventCount: 0,
-  lastClear: Date.now()
-}
 
 const updateRecentStats = p => {
   if (charIdIsValid(p.character_id)) recentStats.uniquePlayers.add(p.character_id);
@@ -342,7 +344,7 @@ const updateRecentStats = p => {
 
 const clearRecentStats = () => {
   const temp = structuredClone(recentStats);
-  recentStats = { uniquePlayers: new Set(), eventCount: 0, lastClear: Date.now() };
+  recentStats = { uniquePlayers: temp.uniquePlayers, eventCount: 0, lastClear: Date.now() };
   return temp;
 }
 
