@@ -79,8 +79,10 @@ const currDateAsFilenameFormat = () => {
 
 const logCaughtException = (error) => {
   const dateStr = getDateAndTimeString(new Date());
-  console.log(`${dateStr} [EXCEPTION] ${error.name} ${error.message}`);
+  const logStr = `${dateStr} [EXCEPTION] ${error.name} ${error.message}`;
+  console.log(logStr);
   console.log(error);
+  return logStr;
 }
 
 const inputDateToFilenameFormat = dateStr => {
@@ -93,6 +95,13 @@ const inputDateFormatToTimestamp = dateStr => {
   const [year, month, day, hour, minute] = dateStr.split(/[- :]/).map(str=>parseInt(str));
   //console.log(`year:${year} month:${month} day:${day} hour:${hour} minute:${minute}`);
   const timestamp = parseInt(Date.UTC(2000+year, month - 1, day, hour, minute)/1000);
+  return timestamp;
+}
+
+const logDateFormatToTimestamp = dateStr => {
+  const [year, month, day, hour, minute, second] = dateStr.split(/[- :]/).map(str=>parseInt(str));
+  //console.log(`year:${year} month:${month} day:${day} hour:${hour} minute:${minute}`);
+  const timestamp = parseInt(Date.UTC(year, month - 1, day, hour, minute, second)/1000);
   return timestamp;
 }
 
@@ -148,5 +157,6 @@ module.exports = {
     timestampToInputDateFormat,
     inputDateFormatToTimestamp,
     inputDateToFilenameFormat,
-    NotFoundError
+    NotFoundError,
+    logDateFormatToTimestamp
 }

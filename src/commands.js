@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { db, addTrackedCharacter, addTrackedOutfit, addTeam } = require('./database-api');
 const { getCharacterDetails, getOutfitDetails, getLsCharacters } = require('./census-funcs');
-const { closeWebsocket } = require('./event-handler');
+const { closeWebsocket, eventMsgBuffer, eventMsgBufferMaxLength } = require('./event-handler');
 const { generateTimeline } = require('./timeline-gen');
 const { generateReportForCharacters, generateReportForTeam } = require('./report-gen');
 const { 
@@ -18,9 +18,11 @@ const {
   currDateAsFilenameFormat, 
   assertValidDateFormat, 
   timestampToInputDateFormat, 
-  inputDateFormatToTimestamp 
+  inputDateFormatToTimestamp,
+  logDateFormatToTimestamp
 } = require('./helper-funcs');
 const path = require('path');
+const { time } = require('console');
 
 const maxReportLength = 6*60;
 
@@ -715,6 +717,41 @@ module.exports = {
         logCaughtException(e);
         interaction.respond([]);
       }
+    }
+  },
+  view_event_stream: {
+    data: new SlashCommandBuilder()
+      .setName('view_event_stream')
+      .setDescription('See live events as they come in')
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .setDMPermission(false)
+      .addIntegerOption(option=>
+        option.setName('timeout')
+              .setDescription('Time in minutes after which the stream view stops updating')
+              .setRequired(false)
+              .setMinValue(1)
+              .setMaxValue(60)),
+    execute: async interaction => {
+      await interaction.deferReply();
+      const streamViewUpdatePeriod = 5000; // 5 sec
+      const defaultTimeout = 5; // 5 min default
+      const startTime = parseInt(Date.now()/1000);
+      const timeout = interaction.options.getInteger('timeout') || defaultTimeout;
+      const timerId = setInterval(async () => {
+        try {
+          const currTime = parseInt(Date.now()/1000);
+          let msgHeader = `📡 Event stream (updated <t:${currTime}:R>):\n`;
+          const msgBody = eventMsgBuffer.join('\n') || ' ';
+          if (currTime - startTime > timeout*60) {
+            clearInterval(timerId);
+            msgHeader = `🔒 Event stream (final update <t:${currTime}:R>):\n`;
+          }
+          await interaction.editReply(msgHeader + msgBody);
+        } catch (e) {
+          await interaction.editReply(`Event stream (updated <t:${parseInt(Date.now()/1000)}:R>):\n\`${logCaughtException(e)}\``)
+        }
+      }, streamViewUpdatePeriod);
+      //eventStreamViewtimers.push(timerId);
     }
   }
 }

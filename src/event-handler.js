@@ -31,6 +31,8 @@ var ws = null;
 var charMap = null;
 var teamMap = null;
 var trackedIds = null;
+var eventMsgBuffer = [];
+const eventMsgBufferMaxLength = 12;
 
 const vrZoneIds = new Set('95', '96', '97', '98');
 
@@ -39,44 +41,44 @@ const vrZoneIds = new Set('95', '96', '97', '98');
 const getEventMsg = (eventName, event) => {
   const involvedTeams = [];
   ['attackerTeamId', 'teamId', 'otherTeamId'].forEach(teamIdProperty => {
-    if (teamIdProperty in event) involvedTeams.push(teamMap[event[teamIdProperty]]?.tag || '?');
+    if (teamIdProperty in event) involvedTeams.push(teamMap[event[teamIdProperty]]?.tag || null);
   });
-  let msg = `${timestampToDate(event.timestamp)} [${eventName}] [${involvedTeams.join('/')}]`;
-  msg += ' '.repeat('PlayerFacilityCapture'.length - eventName.length);
+  let header = `${timestampToDate(event.timestamp)} [${eventName}]`;
+  let msg = '';
   if (eventName === 'Death') {
-    msg += `${event.attacker} (${event.attackerFaction} ${event.attackerClass}`;
+    msg += `${involvedTeams?.[0] ? `[${involvedTeams[0]}] ` : ''}${event.attacker} (${event.attackerFaction} ${event.attackerClass}`;
     if (event.attackerVehicle) msg += ` in ${event.attackerVehicle}`;
-    msg += `) killed ${event.character} (${event.faction} ${event.class}`;
+    msg += `) killed ${involvedTeams?.[1] ? `[${involvedTeams[1]}] ` : ''}${event.character} (${event.faction} ${event.class}`;
     if (event.vehicle) msg += ` in ${event.vehicle}`;
     msg += `) with ${event.attackerWeapon}`;
     if (event.headshot) msg += ' (headshot)';
     msg += ` [${event.continent}]`;
   } 
   else if (eventName === 'GainExperience') {
-    msg += `${event.character} (${event.faction} ${event.class}) got ${event.amount}XP for ${event.description}`
-    if (event.other) msg += ` through ${event.other}`;
+    msg += `${involvedTeams?.[0] ? `[${involvedTeams[0]}] ` : ''}${event.character} (${event.faction} ${event.class}) got ${event.amount}XP for ${event.description}`
+    if (event.other) msg += ` through ${involvedTeams?.[1] ? `[${involvedTeams[1]}] ` : ''}${event.other}`;
     else if (event.otherId > 0) msg += ` through NPC ${event.otherId}`;
     msg += ` [${event.continent}]`;
   } 
   else if (eventName === 'VehicleDestroy') {
-    msg += `${event.attacker} (${event.attackerFaction} ${event.attackerClass}`;
+    msg += `${involvedTeams?.[0] ? `[${involvedTeams[0]}] ` : ''}${event.attacker} (${event.attackerFaction} ${event.attackerClass}`;
     if (event.attackerVehicle) msg += ` in ${event.attackerVehicle}`;
-    msg += `) destroyed ${event.character}'s ${event.vehicle} (${event.faction}) with ${event.attackerWeapon} [${event.continent}]`;
+    msg += `) destroyed ${involvedTeams?.[1] ? `[${involvedTeams[1]}] ` : ''}${event.character}'s ${event.vehicle} (${event.faction}) with ${event.attackerWeapon} [${event.continent}]`;
   } 
   else if (eventName === 'PlayerFacilityCapture') {
-    msg +=  `${event.character} captured ${event.facility} [${event.continent}]`;
+    msg +=  `${involvedTeams?.[0] ? `[${involvedTeams[0]}] ` : ''}${event.character} captured ${event.facility} [${event.continent}]`;
   }
   else if (eventName === 'PlayerFacilityDefend') {
-    msg += `${event.character} defended ${event.facility} [${event.continent}]`;
+    msg += `${involvedTeams?.[0] ? `[${involvedTeams[0]}] ` : ''}${event.character} defended ${event.facility} [${event.continent}]`;
   } 
   else if (eventName === 'SkillAdded') {
-    msg += `${event.character} unlocked`
+    msg += `${involvedTeams?.[0] ? `[${involvedTeams[0]}] ` : ''}${event.character} unlocked`
     if (event.name) msg += ` ${event.name} (${event.skillLine}, ${event.skillPoints} points})`; else msg += ` unknown skill (${event.skillId})`;
     if (event.grantItemId) msg += ` grant item: ${itemMap[event.grantItemId].name} (ID ${event.grantItemId})`;
     msg += ` [${event.continent}]`;
   } 
   else if (eventName === 'ItemAdded') {
-    msg += `${event.character} unlocked`
+    msg += `${involvedTeams?.[0] ? `[${involvedTeams[0]}] ` : ''}${event.character} unlocked`
     if (event.itemCount) msg += ` ${event.itemCount}`;
     if (event.name) msg += ` ${event.name} (${event.type}, ${event.category})`; else msg += ` unknown item (${event.itemId})`;
     if (event.itemId in itemMap && itemMap[event.itemId].parentItems.length > 0) msg += ` for ${itemMap[itemMap[event.itemId].parentItems[0]].name}`;
@@ -85,12 +87,14 @@ const getEventMsg = (eventName, event) => {
     msg += ` [${event.continent}]`;
   } 
   else if (eventName === 'PlayerLogin') {
-    msg += `${event.character} logged in`;
+    msg += `${involvedTeams?.[0] ? `[${involvedTeams[0]}] ` : ''}${event.character} logged in`;
   } else if (eventName === 'PlayerLogout') {
-    msg += `${event.character} logged out`;
+    msg += `${involvedTeams?.[0] ? `[${involvedTeams[0]}] ` : ''}${event.character} logged out`;
   } else return 'unknown event';
   msg += ` [${event.server}]`
-  return msg;
+  eventMsgBuffer.push(`<t:${event.timestamp}:T>\` > ${msg}\``);
+  if (eventMsgBuffer.length > eventMsgBufferMaxLength) eventMsgBuffer.shift();
+  return header + ' '.repeat('PlayerFacilityCapture'.length - eventName.length) + msg;
 }
 
 const logEventToConsole = (eventName, event) => {
@@ -445,5 +449,7 @@ module.exports = {
   handlePlayerSessionPayload,
   getCharAndTeamMap,
   closeWebsocket,
-  clearRecentStats
+  clearRecentStats,
+  eventMsgBuffer,
+  eventMsgBufferMaxLength
 }
