@@ -299,6 +299,7 @@ const handlePlayerSessionPayload = async (p) => {
   }
   logEventToConsole(p.event_name, playerSessionEvent);
   savePlayerSessionEvent.run(playerSessionEvent);  
+  if (p.event_name === 'PlayerLogout') recentStats.uniquePlayers.delete(p.character_id);
   if (trackedIds.has(p.character_id)) {
     
     let msg = `Team ${teamMap[charMap[p.character_id].teamId].tag} online count updated from ${teamMap[charMap[p.character_id].teamId].currOnline.size} to `
@@ -306,7 +307,6 @@ const handlePlayerSessionPayload = async (p) => {
       teamMap[charMap[p.character_id].teamId].currOnline.add(p.character_id);
     } else {
       teamMap[charMap[p.character_id].teamId].currOnline.delete(p.character_id);
-      recentStats.uniquePlayers.delete(p.character_id);
     }
     console.log(msg + teamMap[charMap[p.character_id].teamId].currOnline.size);
   }
