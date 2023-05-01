@@ -44,7 +44,7 @@ const assertSanitizedInput = (input) => {
 
 const sanitizedSentence = /^[a-zA-Z0-9\s.,;:'()?!]+$/i;
 const assertSanitizedSentenceInput = (input) => {
-  if (!sanitizedSentence.test(teamName)) throw new InvalidInputError(`Invalid characters in ${input}`);
+  if (!sanitizedSentence.test(input)) throw new InvalidInputError(`Invalid characters in ${input}`);
 }
 
 const psbCharNameRegex = /\w{1,4}x\w+(TR|NC|VS)/;
