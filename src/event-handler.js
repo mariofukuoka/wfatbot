@@ -348,6 +348,9 @@ const clearRecentStats = () => {
   return temp;
 }
 
+const getOnlinePlayers = () => recentStats.uniquePlayers;
+
+
 const startWebsocket = async () => {
   [charMap, teamMap] = await getCharAndTeamMap();
   console.log('Character & team map acquired.');
@@ -452,5 +455,6 @@ module.exports = {
   closeWebsocket,
   clearRecentStats,
   eventMsgBuffer,
-  eventMsgBufferMaxLength
+  eventMsgBufferMaxLength,
+  getOnlinePlayers
 }

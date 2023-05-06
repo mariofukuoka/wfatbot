@@ -36,7 +36,7 @@ class InvalidInputError extends Error {
 
 const sanitizedWord = /^[a-zA-Z0-9]*$/;
 const isSanitized = word => {
-  return sanitizedWord.test(word);
+  return /^[a-zA-Z0-9]*$/.test(word);
 }
 const assertSanitizedInput = (input) => {
   if (!sanitizedWord.test(input)) throw new InvalidInputError(`Invalid characters in ${input}`);
@@ -45,6 +45,19 @@ const assertSanitizedInput = (input) => {
 const sanitizedSentence = /^[a-zA-Z0-9\s.,;:'()?!]+$/i;
 const assertSanitizedSentenceInput = (input) => {
   if (!sanitizedSentence.test(teamName)) throw new InvalidInputError(`Invalid characters in ${input}`);
+}
+
+const psbCharNameRegex = /\w{1,4}x\w+(TR|NC|VS)/;
+const insertPsbCharNameFactionVariants = psbCharNames => {
+  const outputNames = new Set();
+  psbCharNames.forEach(psbCharName => {
+    if (psbCharNameRegex.test(psbCharName)) {
+      const nameCommonPart = psbCharName.slice(0, -2);
+      ['TR', 'NC', 'VS'].forEach(factionTag => outputNames.add(nameCommonPart + factionTag));
+    }
+    else outputNames.add(psbCharName);
+  });
+  return [...outputNames];
 }
 
 // valid character ids are odd, npc ids are even
@@ -158,5 +171,6 @@ module.exports = {
     inputDateFormatToTimestamp,
     inputDateToFilenameFormat,
     NotFoundError,
-    logDateFormatToTimestamp
+    logDateFormatToTimestamp,
+    insertPsbCharNameFactionVariants
 }

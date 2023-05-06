@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { db, addTrackedCharacter, addTrackedOutfit, addTeam } = require('./database-api');
 const { getCharacterDetails, getOutfitDetails, getLsCharacters } = require('./census-funcs');
-const { closeWebsocket, eventMsgBuffer, eventMsgBufferMaxLength } = require('./event-handler');
+const { closeWebsocket, eventMsgBuffer, eventMsgBufferMaxLength, getOnlinePlayers } = require('./event-handler');
 const { generateTimeline } = require('./timeline-gen');
 const { generateReportForCharacters, generateReportForTeam } = require('./report-gen');
 const { 
@@ -19,7 +19,8 @@ const {
   assertValidDateFormat, 
   timestampToInputDateFormat, 
   inputDateFormatToTimestamp,
-  logDateFormatToTimestamp
+  logDateFormatToTimestamp,
+  insertPsbCharNameFactionVariants
 } = require('./helper-funcs');
 const path = require('path');
 const { time } = require('console');
@@ -108,8 +109,11 @@ module.exports = {
         const teamId = db.prepare(`SELECT teamId FROM teams WHERE teamTag LIKE '${teamTag}'`).get()?.teamId;
         if (!teamId) throw new NotFoundError(`no team called \`${teamTag}\` found`);
         if (interaction.options.getSubcommand() === 'character') {
-          const charNames = interaction.options.getString('character_names').split(/\s+/);
-          charNames.forEach(name=>assertSanitizedInput(name));
+          let charNames = interaction.options.getString('character_names').split(/\s+/);
+          const charSet = new Set();
+          charNames.forEach(name => assertSanitizedInput(name));
+          charNames = insertPsbCharNameFactionVariants(charNames);
+          console.log(charNames);
           let alreadyTracked = db.prepare(
             `SELECT character, teamTag FROM trackedCharacters 
             JOIN teams ON teams.teamId=trackedCharacters.teamId
@@ -134,7 +138,7 @@ module.exports = {
               } catch (e) {
                 if (e.name === 'SqliteError' && e.code === 'SQLITE_CONSTRAINT_UNIQUE') 
                   msg += `\`${res.value.character}\` is already assigned to \`${alreadyTracked[alreadyTracked.map(entry=>entry.character).indexOf(res.value.character)]?.teamTag}\`\n`;
-                else if (e instanceof NotFoundError) msg += `\`${charNames[idx]}\`: no such character found\n`;
+                else if (e instanceof NotFoundError) msg += `\`${charNames[idx]}\` not found\n`;
                 else msg += `\`${charNames[idx]}\` failed to be processed\n`;
               }
             } 
@@ -212,14 +216,16 @@ module.exports = {
         if (subcommand === 'character') {
           const charToRemove = interaction.options.getString('character_name');
           assertSanitizedInput(charToRemove);
+          const charsToRemove = insertPsbCharNameFactionVariants([charToRemove]);
+          const quoteEnclosedCharsToRemove = charsToRemove.map(c=>`'${c}'`);
           const removed = db.prepare(
             `SELECT character, teams.teamTag FROM trackedCharacters 
             INNER JOIN teams ON teams.teamId = trackedCharacters.teamId 
-            WHERE character LIKE '${charToRemove}'`).get();
+            WHERE character IN (${quoteEnclosedCharsToRemove})`).all();
           const results = db.prepare(
             `DELETE FROM trackedCharacters
-            WHERE character LIKE '${charToRemove}'`).run();
-          if (results.changes === 1) await interaction.editReply(`Removed \`${removed.character}\` from \`${removed.teamTag}\``);
+            WHERE character IN (${quoteEnclosedCharsToRemove})`).run();
+          if (results.changes >= 1) await interaction.editReply(`Removed \`${removed.map(r=>r.character).join(' ')}\` from \`${removed[0].teamTag}\``);
           else await interaction.editReply(`Error: no such character \`${charToRemove}\``);
         }
         else if (subcommand === 'outfit') {
@@ -759,6 +765,22 @@ module.exports = {
         }
       }, streamViewUpdatePeriod);
       eventStreamViewTimers.add(timerId);
+    }
+  },
+  online :{
+    data: new SlashCommandBuilder()
+      .setName('online')
+      .setDescription('View currently online players')
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .setDMPermission(false),
+    execute: async interaction => {
+      await interaction.deferReply();
+      try {
+        await interaction.editReply(`Currently online players:\n\`\`\`${[...getOnlinePlayers()].join(' ')}\`\`\``);
+      } catch (e) {
+        logCaughtException(e);
+        await interaction.editReply("Error: couldn't execute command");
+      }
     }
   }
 }
