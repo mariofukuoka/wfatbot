@@ -17,6 +17,7 @@
     "discord.js": "^14.8.0",
     "jsdom": "^21.1.1",
     "louvain": "^1.2.0",
+    "lz-string": "^1.5.0",
     "sync-request": "^6.1.0",
     "ws": "^8.13.0"
   }
