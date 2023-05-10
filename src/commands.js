@@ -113,7 +113,6 @@ module.exports = {
           const charSet = new Set();
           charNames.forEach(name => assertSanitizedInput(name));
           charNames = insertPsbCharNameFactionVariants(charNames);
-          console.log(charNames);
           let alreadyTracked = db.prepare(
             `SELECT character, teamTag FROM trackedCharacters 
             JOIN teams ON teams.teamId=trackedCharacters.teamId
