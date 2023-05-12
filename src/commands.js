@@ -765,8 +765,8 @@ module.exports = {
       }, streamViewUpdatePeriod);
       eventStreamViewTimers.add(timerId);
     }
-  },
-  online :{
+  }
+  /* online :{
     data: new SlashCommandBuilder()
       .setName('online')
       .setDescription('View currently online players')
@@ -781,6 +781,6 @@ module.exports = {
         await interaction.editReply("Error: couldn't execute command");
       }
     }
-  }
+  } */
 }
 
